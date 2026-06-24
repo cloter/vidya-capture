@@ -34,4 +34,5 @@
 !/assets/*.png
 !/docs/*.pdf
 !/gui/*.py
+!/core/*.py
 !/hardware/*.py
