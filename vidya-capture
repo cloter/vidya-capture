@@ -1,0 +1,6 @@
+#!/bin/bash
+# Lançador do Vidya Capture
+# Garante que o Python execute o script dentro do diretório de instalação
+
+cd /opt/vidya-capture
+exec python3 main.py "$@"

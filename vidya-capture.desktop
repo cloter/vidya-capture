@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=0.1.0
+Name=Vidya Capture
+GenericName=Digitalizador de Acervos
+Comment=Sistema Avançado de Digitalização e Preservação de Acervos Documentais
+Exec=vidya-capture
+Icon=vidya_capture_icon
+Terminal=false
+Type=Application
+Categories=Graphics;Scanning;Education;
+Keywords=Scanner;Digitalização;OCR;PDF;LAMUHDI;

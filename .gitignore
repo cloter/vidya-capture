@@ -1,0 +1,37 @@
+# 1. Ignora absolutamente tudo na raiz do projeto
+/*
+
+# 2. Exceção para o próprio arquivo .gitignore (essencial para o Git rastreá-lo)
+!.gitignore
+
+# 3. Exceções para os arquivos específicos na raiz que você listou
+!/gerar-debian.sh
+!/main.py
+!/readme.md
+# !/settings.json
+!/version.txt
+!/vidya-capture
+!/vidya-capture.desktop
+
+# 4. Exceção para o arquivo do Zenodo (caso você o tenha criado para os metadados)
+!.zenodo.json
+
+# 5. Libera a entrada nas pastas de interesse
+!/assets/
+!/docs/
+!/gui/
+!/core/
+!/hardware/
+
+# 6. Bloqueia todo o conteúdo dentro dessas pastas liberadas
+/assets/*
+/docs/*
+/gui/*
+/core/*
+/hardware/*
+
+# 7. Abre exceções finais apenas para os tipos de arquivos desejados dentro de cada pasta
+!/assets/*.png
+!/docs/*.pdf
+!/gui/*.py
+!/hardware/*.py
