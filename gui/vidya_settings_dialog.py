@@ -77,11 +77,13 @@ class V4L2AdvancedDialog(QtWidgets.QDialog):
 
 class VidyaSettingsDialog(QtWidgets.QDialog):
     settings_saved = QtCore.pyqtSignal(dict, str)   # (settings, tab_name)
+    # ---> INSERIR AQUI: Sinal para disparar a nova GUI do Optuna
+    calibration_requested = QtCore.pyqtSignal(dict) # Envia as configs de amostragem
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferências - Vidya Capture")
-        self.resize(720, 580) 
+        self.resize(860, 580) 
         self.settings = load_settings()
         self._setup_ui()
 
@@ -101,6 +103,9 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self._build_process_tab()
         self._build_ocr_tab()
         self._build_custody_tab()
+        # ---> INSERIR AQUI: Construtor da aba do Optuna
+        self._build_optuna_tab()
+        
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_save = QtWidgets.QPushButton("Aplicar")
@@ -1407,6 +1412,141 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         layout.addStretch()
         self.tabs.addTab(tab, "Custódia")        
 
+    def _build_optuna_tab(self):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+
+        info_label = QtWidgets.QLabel(
+            "<b>Calibração Preditiva por Inteligência Artificial (Optuna)</b><br>"
+            "<small>O sistema sorteará amostras do projeto atual. Você fará a marcação ideal nestas amostras "
+            "e a IA testará milhares de parâmetros para encontrar a matemática perfeita para o resto do lote.</small>"
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        # --- GRUPO 1: AMOSTRAGEM ESTRATIFICADA ---
+        grp_sample = QtWidgets.QGroupBox("1. Estratégia de Amostragem (Sorteio)")
+        f_sample = grp_sample.font(); f_sample.setBold(True); grp_sample.setFont(f_sample)
+        grp_sample.setStyleSheet("QLabel, QSpinBox { font-weight: normal; }")
+        lyt_sample = QtWidgets.QFormLayout(grp_sample)
+
+        self.spin_opt_sessions = QtWidgets.QSpinBox()
+        self.spin_opt_sessions.setRange(2, 10)
+        self.spin_opt_sessions.setValue(int(self.settings.get("optuna_sessions", 3)))
+        self.spin_opt_sessions.setToolTip("Divide a linha do tempo do lote em X blocos (Manhã, Tarde, etc).")
+
+        self.spin_opt_samples = QtWidgets.QSpinBox()
+        self.spin_opt_samples.setRange(1, 5)
+        self.spin_opt_samples.setValue(int(self.settings.get("optuna_samples", 3)))
+        self.spin_opt_samples.setToolTip("Quantas imagens serão pescadas dentro de cada bloco de tempo.")
+
+        self.lbl_opt_total = QtWidgets.QLabel()
+        self.lbl_opt_total.setStyleSheet("color: #2980b9; font-weight: bold; font-size: 11pt;")
+        
+        lyt_sample.addRow("Sessões Temporais (Divisões):", self.spin_opt_sessions)
+        lyt_sample.addRow("Amostras por Sessão:", self.spin_opt_samples)
+        lyt_sample.addRow("Total do Ground Truth:", self.lbl_opt_total)
+        layout.addWidget(grp_sample)
+
+        # --- GRUPO 2: ALVOS DA OTIMIZAÇÃO ---
+        grp_targets = QtWidgets.QGroupBox("2. Alvos da Otimização")
+        f_targets = grp_targets.font(); f_targets.setBold(True); grp_targets.setFont(f_targets)
+        grp_targets.setStyleSheet("QCheckBox, QLabel { font-weight: normal; }")
+        lyt_targets = QtWidgets.QVBoxLayout(grp_targets)
+
+        self.chk_opt_crop = QtWidgets.QCheckBox("Otimizar Bounding Boxes (Auto-Crop)")
+        self.chk_opt_crop.setChecked(self.settings.get("optuna_target_crop", True))
+        
+        self.chk_opt_ocr = QtWidgets.QCheckBox("Otimizar Matrizes de Binarização (Pré-processamento OCR)")
+        self.chk_opt_ocr.setChecked(self.settings.get("optuna_target_ocr", True))
+
+        lyt_targets.addWidget(self.chk_opt_crop)
+        lyt_targets.addWidget(self.chk_opt_ocr)
+        layout.addWidget(grp_targets)
+
+        # --- GRUPO 3: ESFORÇO DA MÁQUINA ---
+        grp_effort = QtWidgets.QGroupBox("3. Esforço Computacional")
+        f_effort = grp_effort.font(); f_effort.setBold(True); grp_effort.setFont(f_effort)
+        grp_effort.setStyleSheet("QComboBox, QLabel { font-weight: normal; }")
+        lyt_effort = QtWidgets.QFormLayout(grp_effort)
+
+        self.combo_opt_trials = QtWidgets.QComboBox()
+        self.combo_opt_trials.addItem("Rápido (50 iterações)", 50)
+        self.combo_opt_trials.addItem("Equilibrado (150 iterações)", 150)
+        self.combo_opt_trials.addItem("Profundo (300 iterações)", 300)
+        
+        # Seleciona o salvo ou o Equilibrado como padrão
+        saved_trials = self.settings.get("optuna_trials", 150)
+        idx = self.combo_opt_trials.findData(saved_trials)
+        if idx >= 0: self.combo_opt_trials.setCurrentIndex(idx)
+
+        lbl_effort_info = QtWidgets.QLabel("<small style='color:gray;'>Mais iterações geram parâmetros melhores, mas exigem mais tempo de CPU.</small>")
+        lbl_effort_info.setWordWrap(True)
+
+        lyt_effort.addRow("Tentativas da IA (Trials):", self.combo_opt_trials)
+        lyt_effort.addRow("", lbl_effort_info)
+        layout.addWidget(grp_effort)
+
+        # --- BOTÃO DE AÇÃO ---
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.btn_start_optuna = QtWidgets.QPushButton("  Extrair Amostras e Iniciar Treinamento")
+        self.btn_start_optuna.setIcon(QtGui.QIcon.fromTheme("system-run"))
+        self.btn_start_optuna.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 8px; font-size: 11pt;")
+        self.btn_start_optuna.clicked.connect(self._on_start_optuna_clicked)
+        
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_start_optuna)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+        layout.addStretch()
+        self.tabs.addTab(tab, "Calibração (IA)")
+
+        # Conectar sinais para atualizar o Label Total
+        self.spin_opt_sessions.valueChanged.connect(self._update_optuna_total)
+        self.spin_opt_samples.valueChanged.connect(self._update_optuna_total)
+        self._update_optuna_total()
+
+    def _update_optuna_total(self):
+        """Atualiza dinamicamente o número total de amostras (X * Y)."""
+        x = self.spin_opt_sessions.value()
+        y = self.spin_opt_samples.value()
+        total = x * y
+        self.lbl_opt_total.setText(f"{total} imagens serão sorteadas")
+        
+        # Desabilita o botão se o utilizador inventar de desmarcar tudo
+        has_target = self.chk_opt_crop.isChecked() or self.chk_opt_ocr.isChecked()
+        self.btn_start_optuna.setEnabled(has_target)
+
+    def _on_start_optuna_clicked(self):
+        """Salva as configurações atuais e emite o sinal para abrir a GUI de marcação."""
+        if not self.chk_opt_crop.isChecked() and not self.chk_opt_ocr.isChecked():
+            QtWidgets.QMessageBox.warning(self, "Aviso", "Selecione pelo menos um Alvo de Otimização (Crop ou OCR).")
+            return
+
+        # Monta o dicionário de configuração da calibração
+        calibration_config = {
+            "sessions": self.spin_opt_sessions.value(),
+            "samples": self.spin_opt_samples.value(),
+            "target_crop": self.chk_opt_crop.isChecked(),
+            "target_ocr": self.chk_opt_ocr.isChecked(),
+            "trials": self.combo_opt_trials.currentData()
+        }
+
+        # Salva o estado provisório na memória antes de fechar a janela
+        self.settings["optuna_sessions"] = calibration_config["sessions"]
+        self.settings["optuna_samples"] = calibration_config["samples"]
+        self.settings["optuna_target_crop"] = calibration_config["target_crop"]
+        self.settings["optuna_target_ocr"] = calibration_config["target_ocr"]
+        self.settings["optuna_trials"] = calibration_config["trials"]
+
+        # Como esta ação interrompe o fluxo normal (não é apenas 'Aplicar'), 
+        # acionamos a rotina padrão de salvar tudo e emitimos o sinal que abrirá a GUI do Optuna.
+        self._save_and_close()
+        
+        # Emite o sinal instruindo o VidyaMainWindow a lançar o assistente!
+        self.calibration_requested.emit(calibration_config)
+
     def _build_ocr_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
@@ -1600,6 +1740,14 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             self.settings["custody_tsv_include_ocr"] = self.chk_tsv_ocr.isChecked()
             self.settings["custody_tsv_granularity"] = self.combo_tsv_granularity.currentText()
         
+        # ---> INSERIR AQUI: Salvar estado dos componentes da aba do Optuna
+        if hasattr(self, 'spin_opt_sessions'):
+            self.settings["optuna_sessions"] = self.spin_opt_sessions.value()
+            self.settings["optuna_samples"] = self.spin_opt_samples.value()
+            self.settings["optuna_target_crop"] = self.chk_opt_crop.isChecked()
+            self.settings["optuna_target_ocr"] = self.chk_opt_ocr.isChecked()
+            self.settings["optuna_trials"] = self.combo_opt_trials.currentData()
+            
         self._save_project_metadata(current_working_dir)
         
         save_settings(self.settings)

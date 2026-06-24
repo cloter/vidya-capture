@@ -1649,11 +1649,153 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
     def _open_settings(self):
         dialog = VidyaSettingsDialog(self)
         dialog.settings_saved.connect(self._apply_settings)
+        
+        # ---> NOVA INSERÇÃO: Escutando o pedido de Calibração IA
+        dialog.calibration_requested.connect(self._launch_optuna_calibration)
+        
         dialog.exec_()
         
         # ---> NOVO: Persiste as configurações de geometria da janela ao sair.
         self.save_project_workspace()
 
+    def _launch_optuna_calibration(self, calibration_config: dict):
+        working_dir = self.settings.get("working_dir")
+        if not working_dir or not os.path.exists(working_dir):
+            QtWidgets.QMessageBox.warning(self, "Erro", "Não há um projeto ativo válido para calibrar.")
+            return
+
+        # 1. Importações (feitas localmente para não atrasar o boot do sistema)
+        from core.vidya_dataset_sampler import VidyaDatasetSampler
+        from gui.vidya_ground_truth_dialog import VidyaGroundTruthDialog
+
+        # 2. Executa o sorteio estratificado
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        sampled_paths = VidyaDatasetSampler.generate_ground_truth_pool(
+            working_dir=working_dir,
+            is_single_mode=self.is_single_mode,
+            num_sessions=calibration_config["sessions"],
+            samples_per_session=calibration_config["samples"]
+        )
+        QtWidgets.QApplication.restoreOverrideCursor()
+
+        if not sampled_paths:
+            QtWidgets.QMessageBox.information(self, "Aviso", "O projeto não possui imagens suficientes para o sorteio. Faça algumas capturas primeiro.")
+            return
+
+        # 3. Lança a Interface de Marcação
+        gt_dialog = VidyaGroundTruthDialog(sampled_paths, calibration_config, self.settings, self)
+        
+        if gt_dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # 4. Recupera o gabarito (Ground Truth) criado pelo operador
+            ground_truth_data = gt_dialog.get_ground_truth()
+            
+            logger.info(f"Ground Truth coletado para {len(ground_truth_data)} imagens. Preparando Motor Optuna.")
+            
+            # TODO: O próximo passo acontece aqui. Iniciaremos a Thread do Optuna
+            # self._start_optuna_thread(ground_truth_data, calibration_config)
+
+    def _launch_optuna_calibration(self, calibration_config: dict):
+        working_dir = self.settings.get("working_dir")
+        if not working_dir or not os.path.exists(working_dir):
+            QtWidgets.QMessageBox.warning(self, "Erro", "Não há um projeto ativo válido para calibrar.")
+            return
+
+        # 1. Importações (feitas localmente para não atrasar o boot do sistema)
+        from core.vidya_dataset_sampler import VidyaDatasetSampler
+        from gui.vidya_ground_truth_dialog import VidyaGroundTruthDialog
+
+        # 2. Executa o sorteio estratificado
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        sampled_paths = VidyaDatasetSampler.generate_ground_truth_pool(
+            working_dir=working_dir,
+            is_single_mode=self.is_single_mode,
+            num_sessions=calibration_config["sessions"],
+            samples_per_session=calibration_config["samples"]
+        )
+        QtWidgets.QApplication.restoreOverrideCursor()
+
+        if not sampled_paths:
+            QtWidgets.QMessageBox.information(self, "Aviso", "O projeto não possui imagens suficientes para o sorteio. Faça algumas capturas primeiro.")
+            return
+
+        # 3. Lança a Interface de Marcação
+        gt_dialog = VidyaGroundTruthDialog(sampled_paths, calibration_config, self.settings, self)
+        
+        if gt_dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # 4. Recupera o gabarito (Ground Truth) criado pelo operador
+            ground_truth_data = gt_dialog.get_ground_truth()
+            
+            logger.info(f"Ground Truth coletado para {len(ground_truth_data)} imagens. Preparando Motor Optuna.")
+            
+            # 5. Inicia a Thread e a Barra de Progresso Modal
+            self._start_optuna_thread(ground_truth_data, calibration_config)
+
+    def _start_optuna_thread(self, ground_truth_data: dict, calibration_config: dict):
+        from core.vidya_optuna_tuner import VidyaOptunaTuner
+        
+        # Cria um escudo visual para impedir interação durante a otimização
+        self.optuna_progress = QtWidgets.QProgressDialog("Inicializando Motor de IA...", "Abortar Treinamento", 0, 100, self)
+        self.optuna_progress.setWindowTitle("Calibração Preditiva (Optuna)")
+        self.optuna_progress.setWindowModality(QtCore.Qt.WindowModal)
+        self.optuna_progress.setMinimumDuration(0)
+        self.optuna_progress.setValue(0)
+        
+        # Instancia a Thread
+        self.optuna_thread = VidyaOptunaTuner(ground_truth_data, calibration_config, self.settings)
+        
+        # Liga os sinais vitais
+        self.optuna_thread.progress_update.connect(self._update_optuna_progress)
+        self.optuna_thread.optimization_finished.connect(self._on_optuna_finished)
+        self.optuna_thread.optimization_error.connect(self._on_optuna_error)
+        
+        # Segurança: Se o usuário abortar, tentamos matar a thread
+        self.optuna_progress.canceled.connect(self.optuna_thread.terminate)
+        
+        # Dá a partida no motor
+        self.optuna_thread.start()
+
+    def _update_optuna_progress(self, val: int, msg: str):
+        self.optuna_progress.setValue(val)
+        self.optuna_progress.setLabelText(msg)
+
+    def _on_optuna_error(self, error_msg: str):
+        self.optuna_progress.close()
+        QtWidgets.QMessageBox.critical(self, "Falha na Calibração", f"O motor de IA encontrou um erro crítico:\n\n{error_msg}")
+
+    def _on_optuna_finished(self, best_params: dict):
+        self.optuna_progress.close()
+        
+        if not best_params:
+            QtWidgets.QMessageBox.warning(self, "Calibração Abortada", "A otimização não retornou parâmetros válidos.")
+            return
+
+        # 1. Injeta os parâmetros matemáticos encontrados pela IA nas preferências ativas
+        self.settings.update(best_params)
+        
+        # 2. Força a alteração das comboboxes para o utilizador saber que a máquina assumiu o controle
+        if "ac_blur" in best_params:
+            self.settings["ac_preset"] = "Perfil Otimizado por IA"
+            
+        # 3. Persiste a alteração fisicamente no config.json
+        save_settings(self.settings)
+        
+        # 4. Exibe o relatório de vitória para o operador
+        msg = "<b>Calibração concluída com sucesso!</b><br><br>Os seguintes hiperparâmetros foram ajustados e travados no projeto:<br><br>"
+        for k, v in best_params.items():
+            # Traduz os nomes técnicos para o relatório de forma legível
+            if k == "ac_blur": msg += f"• Desfoque de Fusão: <b>{v}</b><br>"
+            elif k == "ac_dilate": msg += f"• Dilatação Morfológica: <b>{v}</b><br>"
+            elif k == "ac_invert": msg += f"• Cálculo de Contraste: <b>{v}</b><br>"
+            elif k == "ocr_denoise_h": msg += f"• Remoção de Ruído (h): <b>{v:.2f}</b><br>"
+            elif k == "ocr_clahe_clip": msg += f"• Realce de Contraste (CLAHE): <b>{v:.2f}</b><br>"
+            elif k == "ocr_block_size": msg += f"• Binarização (Block Size): <b>{v}</b><br>"
+            elif k == "ocr_c_val": msg += f"• Binarização (C Value): <b>{v}</b><br>"
+            else: msg += f"• {k}: <b>{v}</b><br>"
+            
+        msg += "<br><i>O Vidya utilizará esta matemática ao exportar o lote inteiro.</i>"
+        
+        QtWidgets.QMessageBox.information(self, "Inteligência Artificial", msg)
+                    
     def _apply_settings(self, new_settings: dict, tab_name: str):
         self.settings = new_settings
         c_left = self.settings.get("marker_color_left", "Vermelho")
