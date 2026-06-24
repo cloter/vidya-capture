@@ -37,15 +37,34 @@ class VidyaOptunaTuner(QtCore.QThread):
         try:
             total_trials = self.config.get("trials", 150)
             
+            # ---> INÍCIO DA INSERÇÃO: Controle Avançado de Multithreading <---
+            import os
+            
+            # 1. Resgata o limite de núcleos configurado pelo utilizador na aba OCR
+            jobs = int(self.settings.get("ocr_jobs", 2))
+            
+            # 2. Thread Pinning: Trava o multithreading interno do OpenCV e Tesseract.
+            # Como o Optuna fará a paralelização orquestrada das imagens (n_jobs), 
+            # forçamos os motores gráficos a usarem apenas 1 thread por job para evitar o travamento da CPU.
+            os.environ['OMP_THREAD_LIMIT'] = '1'
+            cv2.setNumThreads(1)
+            # ---> FIM DA INSERÇÃO <---
+            
             if self.config.get("target_crop"):
                 self.progress_update.emit(0, "Iniciando calibração de Auto-Crop...")
                 crop_study = optuna.create_study(direction="maximize")
                 
-                # Otimiza passando a barra de progresso
-                for i in range(total_trials):
-                    crop_study.optimize(self._objective_crop, n_trials=1)
-                    progress = int(((i + 1) / total_trials) * (50 if self.config.get("target_ocr") else 100))
-                    self.progress_update.emit(progress, f"Otimizando Recorte... Iteração {i+1}/{total_trials}")
+                # ---> INÍCIO DA ALTERAÇÃO: Execução Paralela com Callback <---
+                self.completed_crop_trials = 0
+                
+                def crop_callback(study, trial):
+                    self.completed_crop_trials += 1
+                    progress = int((self.completed_crop_trials / total_trials) * (50 if self.config.get("target_ocr") else 100))
+                    self.progress_update.emit(progress, f"Otimizando Recorte... Iteração {self.completed_crop_trials}/{total_trials}")
+
+                # O Optuna agora distribui os testes pelos núcleos físicos permitidos!
+                crop_study.optimize(self._objective_crop, n_trials=total_trials, n_jobs=jobs, callbacks=[crop_callback])
+                # ---> FIM DA ALTERAÇÃO <---
                 
                 best_crop = crop_study.best_params
                 logger.info(f"Melhor IoU (Crop) alcançado: {crop_study.best_value:.4f}")
@@ -55,11 +74,18 @@ class VidyaOptunaTuner(QtCore.QThread):
                 self.progress_update.emit(50 if self.config.get("target_crop") else 0, "Iniciando calibração de OCR...")
                 ocr_study = optuna.create_study(direction="maximize")
                 
-                for i in range(total_trials):
-                    ocr_study.optimize(self._objective_ocr, n_trials=1)
+                # ---> INÍCIO DA ALTERAÇÃO: Execução Paralela com Callback <---
+                self.completed_ocr_trials = 0
+                
+                def ocr_callback(study, trial):
+                    self.completed_ocr_trials += 1
                     base_prog = 50 if self.config.get("target_crop") else 0
-                    progress = base_prog + int(((i + 1) / total_trials) * (50 if self.config.get("target_crop") else 100))
-                    self.progress_update.emit(progress, f"Otimizando Binarização... Iteração {i+1}/{total_trials}")
+                    progress = base_prog + int((self.completed_ocr_trials / total_trials) * (50 if self.config.get("target_crop") else 100))
+                    self.progress_update.emit(progress, f"Otimizando Binarização... Iteração {self.completed_ocr_trials}/{total_trials}")
+
+                # O Optuna agora distribui os testes pelos núcleos físicos permitidos!
+                ocr_study.optimize(self._objective_ocr, n_trials=total_trials, n_jobs=jobs, callbacks=[ocr_callback])
+                # ---> FIM DA ALTERAÇÃO <---
                 
                 best_ocr = ocr_study.best_params
                 logger.info(f"Melhor Confiança (OCR) alcançada: {ocr_study.best_value:.2f}%")

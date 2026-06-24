@@ -858,6 +858,17 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                 "ocr_sidecar": self.chk_ocr_sidecar.isChecked()
             }
             
+            # ---> INÍCIO DA INSERÇÃO: Sincroniza a memória da IA com o manifesto do projeto <---
+            optuna_keys = ["ac_blur", "ac_dilate", "ac_invert", "ocr_denoise_h", "ocr_clahe_clip", "ocr_block_size", "ocr_c_val"]
+            optuna_data = {}
+            for k in optuna_keys:
+                if k in self.settings:
+                    optuna_data[k] = self.settings[k]
+                    
+            if optuna_data:
+                data["optuna_params"] = optuna_data
+            # ---> FIM DA INSERÇÃO <---
+            
         if hasattr(self, 'combo_source'):
             data["capture_params"] = {
                 "input_source": self.combo_source.currentText(),
@@ -1471,6 +1482,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_effort = QtWidgets.QFormLayout(grp_effort)
 
         self.combo_opt_trials = QtWidgets.QComboBox()
+        self.combo_opt_trials.addItem("Relâmpago (10 iterações)", 10)
         self.combo_opt_trials.addItem("Rápido (50 iterações)", 50)
         self.combo_opt_trials.addItem("Equilibrado (150 iterações)", 150)
         self.combo_opt_trials.addItem("Profundo (300 iterações)", 300)

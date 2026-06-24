@@ -30,24 +30,50 @@ class VidyaImageProcessor(QtCore.QThread):
         self.out_dir = os.path.join(self.working_dir, "out")
         os.makedirs(self.out_dir, exist_ok=True)
 
-    def _calculate_ocr_heuristics(self):
-        escurecimento = self.settings.get("ocr_cor_papel", 20)
-        intensidade = self.settings.get("ocr_int_impressao", 80)
-        extensao = self.settings.get("ocr_tam_manchas", 10)
-        profundidade = self.settings.get("ocr_prof_manchas", 0)
+    def _get_ocr_parameters(self, manifest_data: dict):
+        """
+        Lê os parâmetros de OCR do projeto (prioridade), depois das configs globais, 
+        ou calcula a heurística dos sliders (Fallback).
+        """
+        # 1. OPTUNA NO PROJETO: Se a IA calibrou este lote, use a matemática perfeita absoluta
+        proj_optuna = manifest_data.get("optuna_params", {})
+        if "ocr_denoise_h" in proj_optuna:
+            return (
+                float(proj_optuna["ocr_denoise_h"]),
+                float(proj_optuna["ocr_clahe_clip"]),
+                int(proj_optuna["ocr_block_size"]),
+                int(proj_optuna["ocr_c_val"])
+            )
+            
+        # 2. OPTUNA GLOBAL: Se não calibrou o lote, mas tem calibração no sistema (Fallback 1)
+        if "ocr_denoise_h" in self.settings:
+            return (
+                float(self.settings["ocr_denoise_h"]),
+                float(self.settings["ocr_clahe_clip"]),
+                int(self.settings["ocr_block_size"]),
+                int(self.settings["ocr_c_val"])
+            )
 
+        # 3. HEURÍSTICA: Se não tem IA, lê as notas dos Sliders e converte em matriz OpenCV
+        # (Prioriza o Slider salvo no projeto. Se não houver, usa o Slider global do sistema)
+        proj_ocr = manifest_data.get("ocr_params", {})
+        
+        escurecimento = proj_ocr.get("ocr_cor_papel", self.settings.get("ocr_cor_papel", 20))
+        intensidade = proj_ocr.get("ocr_int_impressao", self.settings.get("ocr_int_impressao", 80))
+        extensao = proj_ocr.get("ocr_tam_manchas", self.settings.get("ocr_tam_manchas", 10))
+        profundidade = proj_ocr.get("ocr_prof_manchas", self.settings.get("ocr_prof_manchas", 0))
+
+        # --- A Matemática de Tradução (Mantida) ---
         h_base = (extensao * 0.15) + (profundidade * 0.05)
         if intensidade < 50:
-            factor = intensidade / 50.0
-            denoise_h = h_base * factor
+            denoise_h = h_base * (intensidade / 50.0)
         else:
             denoise_h = h_base
         denoise_h = min(denoise_h, 20.0)
 
         clahe_base = 1.0 + (escurecimento * 0.03)
         if intensidade < 60:
-            boost = (60 - intensidade) * 0.05
-            contrast_clip = clahe_base + boost
+            contrast_clip = clahe_base + ((60 - intensidade) * 0.05)
         else:
             contrast_clip = clahe_base
         contrast_clip = min(contrast_clip, 6.0)
@@ -57,8 +83,7 @@ class VidyaImageProcessor(QtCore.QThread):
 
         c_base = 8 + (escurecimento * 0.05) + (profundidade * 0.1)
         if intensidade < 70:
-            reduction = (70 - intensidade) * 0.15
-            c_final = c_base - reduction
+            c_final = c_base - ((70 - intensidade) * 0.15)
         else:
             c_final = c_base
         c_final = int(max(2, min(c_final, 25)))
@@ -527,24 +552,52 @@ class VidyaSingleProcessor(QtCore.QThread):
         self.out_dir = os.path.join(self.working_dir, "out")
         os.makedirs(self.out_dir, exist_ok=True)
 
-    def _calculate_ocr_heuristics(self):
-        escurecimento = self.settings.get("ocr_cor_papel", 20)
-        intensidade = self.settings.get("ocr_int_impressao", 80)
-        extensao = self.settings.get("ocr_tam_manchas", 10)
-        profundidade = self.settings.get("ocr_prof_manchas", 0)
+    def _get_ocr_parameters(self, manifest_data: dict):
+        """
+        Lê os parâmetros de OCR do projeto (prioridade), depois das configs globais, 
+        ou calcula a heurística dos sliders (Fallback).
+        """
+        # 1. OPTUNA NO PROJETO: Se a IA calibrou este lote, use a matemática perfeita absoluta
+        proj_optuna = manifest_data.get("optuna_params", {})
+        if "ocr_denoise_h" in proj_optuna:
+            return (
+                float(proj_optuna["ocr_denoise_h"]),
+                float(proj_optuna["ocr_clahe_clip"]),
+                int(proj_optuna["ocr_block_size"]),
+                int(proj_optuna["ocr_c_val"])
+            )
+            
+        # 2. OPTUNA GLOBAL: Se não calibrou o lote, mas tem calibração no sistema (Fallback 1)
+        if "ocr_denoise_h" in self.settings:
+            return (
+                float(self.settings["ocr_denoise_h"]),
+                float(self.settings["ocr_clahe_clip"]),
+                int(self.settings["ocr_block_size"]),
+                int(self.settings["ocr_c_val"])
+            )
 
+        # 3. HEURÍSTICA: Se não tem IA, lê as notas dos Sliders e converte em matriz OpenCV
+        # (Prioriza o Slider salvo no projeto. Se não houver, usa o Slider global do sistema)
+        proj_ocr = manifest_data.get("ocr_params", {})
+        
+        escurecimento = proj_ocr.get("ocr_cor_papel", self.settings.get("ocr_cor_papel", 20))
+        intensidade = proj_ocr.get("ocr_int_impressao", self.settings.get("ocr_int_impressao", 80))
+        extensao = proj_ocr.get("ocr_tam_manchas", self.settings.get("ocr_tam_manchas", 10))
+        profundidade = proj_ocr.get("ocr_prof_manchas", self.settings.get("ocr_prof_manchas", 0))
+
+        # --- A Matemática de Tradução (Mantida) ---
         h_base = (extensao * 0.15) + (profundidade * 0.05)
         if intensidade < 50:
-            factor = intensidade / 50.0
-            denoise_h = h_base * factor
-        else: denoise_h = h_base
+            denoise_h = h_base * (intensidade / 50.0)
+        else:
+            denoise_h = h_base
         denoise_h = min(denoise_h, 20.0)
 
         clahe_base = 1.0 + (escurecimento * 0.03)
         if intensidade < 60:
-            boost = (60 - intensidade) * 0.05
-            contrast_clip = clahe_base + boost
-        else: contrast_clip = clahe_base
+            contrast_clip = clahe_base + ((60 - intensidade) * 0.05)
+        else:
+            contrast_clip = clahe_base
         contrast_clip = min(contrast_clip, 6.0)
 
         raw_block = int(19 + (extensao * 0.4))
@@ -552,9 +605,9 @@ class VidyaSingleProcessor(QtCore.QThread):
 
         c_base = 8 + (escurecimento * 0.05) + (profundidade * 0.1)
         if intensidade < 70:
-            reduction = (70 - intensidade) * 0.15
-            c_final = c_base - reduction
-        else: c_final = c_base
+            c_final = c_base - ((70 - intensidade) * 0.15)
+        else:
+            c_final = c_base
         c_final = int(max(2, min(c_final, 25)))
 
         return denoise_h, contrast_clip, block_size, c_final
@@ -640,6 +693,17 @@ class VidyaSingleProcessor(QtCore.QThread):
                         logger.warning(f"Aviso: Não foi possível remover lixo residual '{f_name}': {e}")
             # ---> FIM DA PURGA PREVENTIVA <---
             
+            # ---> INÍCIO DA CORREÇÃO: CARREGAR O MANIFESTO ANTES DE INICIAR O LOOP <---
+            project_manifest_path = os.path.join(self.working_dir, "project.json")
+            manifest_data = {}
+            if os.path.exists(project_manifest_path):
+                try:
+                    with open(project_manifest_path, 'r', encoding='utf-8') as f:
+                        manifest_data = json.load(f)
+                except Exception as e:
+                    logger.error(f"Falha ao carregar manifesto central: {e}")
+            # ---> FIM DA CORREÇÃO <---
+            
             total_files = len(self.valid_items)
             processed_images = []
             original_geom_images = []
@@ -651,11 +715,12 @@ class VidyaSingleProcessor(QtCore.QThread):
             dewarp_agg = float(self.settings.get("dewarp_aggressiveness", 1.0))
             pdf_source = self.settings.get("pdf_source", "tratadas")
 
+            # ---> AQUI INVOCAMOS O NOVO MÉTODO PASSANDO O MANIFESTO DO PROJETO <---
             do_ocr_prep = self.flags.get("ocr") and self.settings.get("ocr_preprocess", True)
             if do_ocr_prep:
-                den_h, clahe_clip, block_s, c_val = self._calculate_ocr_heuristics()
+                den_h, clahe_clip, block_s, c_val = self._get_ocr_parameters(manifest_data)
 
-            target_ext, encode_params = self._get_encode_params() # <--- BUSCA OS PARÂMETROS
+            target_ext, encode_params = self._get_encode_params()
 
             # =========================================================================
             # 1. PROCESSAMENTO DE IMAGENS (OpenCV)

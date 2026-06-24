@@ -1779,6 +1779,27 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         # 3. Persiste a alteração fisicamente no config.json
         save_settings(self.settings)
         
+        # ---> INÍCIO DA INSERÇÃO: Salva os parâmetros do Optuna no project.json do lote atual <---
+        working_dir = self.settings.get("working_dir")
+        if working_dir and os.path.exists(working_dir):
+            proj_file = os.path.join(working_dir, "project.json")
+            if os.path.exists(proj_file):
+                try:
+                    with open(proj_file, 'r', encoding='utf-8') as f:
+                        proj_data = json.load(f)
+                    
+                    if "optuna_params" not in proj_data:
+                        proj_data["optuna_params"] = {}
+                    
+                    # Atualiza o manifesto do projeto com a matemática da IA
+                    proj_data["optuna_params"].update(best_params)
+                    
+                    with open(proj_file, 'w', encoding='utf-8') as f:
+                        json.dump(proj_data, f, indent=4, ensure_ascii=False)
+                except Exception as e:
+                    logger.error(f"Erro ao salvar parâmetros do Optuna no projeto atual: {e}")
+        # ---> FIM DA INSERÇÃO <---
+        
         # 4. Exibe o relatório de vitória para o operador
         msg = "<b>Calibração concluída com sucesso!</b><br><br>Os seguintes hiperparâmetros foram ajustados e travados no projeto:<br><br>"
         for k, v in best_params.items():

@@ -104,6 +104,11 @@ class VidyaGroundTruthDialog(QtWidgets.QDialog):
         # Atualiza o UI da lista
         self.list_samples.setCurrentRow(self.current_index)
         
+        # 1. PROTEÇÃO C++: Remove o marcador da cena antes do clear()
+        if self.marker.scene() == self.scene:
+            self.scene.removeItem(self.marker)
+            
+        # Agora é seguro destruir as imagens antigas da memória
         self.scene.clear()
         
         pixmap = QtGui.QPixmap(img_path)
@@ -123,7 +128,11 @@ class VidyaGroundTruthDialog(QtWidgets.QDialog):
         # Adiciona o marcador de volta à cena
         w, h = pixmap.width(), pixmap.height()
         self.marker.set_image_bounds(w, h)
-        self.marker.set_geometry({"x": w*0.1, "y": h*0.1, "width": w*0.8, "height": h*0.8}) # Padrão centralizado
+        
+        # 2. CORREÇÃO DA VARIÁVEL: Usando 'img_path' para verificar se a imagem já tem um gabarito salvo
+        if img_path not in self.ground_truth_data:
+            self.marker.set_geometry({"x": w*0.1, "y": h*0.1, "width": w*0.8, "height": h*0.8}) 
+            
         self.scene.addItem(self.marker)
         
         # Ajusta a visualização (Zoom out para caber)
