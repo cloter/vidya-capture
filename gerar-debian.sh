@@ -112,7 +112,7 @@ Version: $VERSION
 Section: graphics
 Priority: optional
 Architecture: $ARCH
-Depends: python3, python3-pyqt5, python3-opencv, python3-numpy, python3-sane, sane-utils, tesseract-ocr, tesseract-ocr-por, tesseract-ocr-eng, ocrmypdf, v4l2loopback-utils, v4l-utils, python3-gphoto2, python3-psutil
+Depends: python3, python3-pyqt5, python3-opencv, python3-numpy, python3-sane, sane-utils, tesseract-ocr, tesseract-ocr-por, tesseract-ocr-eng, tesseract-ocr-spa, ocrmypdf, v4l2loopback-utils, v4l-utils, python3-gphoto2, python3-psutil, python3-tesserocr
 Maintainer: LAMUHDI / UEPG <coordenacao@uepg.br>
 Description: O Vidya Capture é um OSS GPL-3.0+ para digitalização
  O Vidya Capture é uma solução técnica desenvolvida pelo

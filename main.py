@@ -8,12 +8,10 @@ import signal
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 # pip3 install pytesseract optuna
-# sudo apt purge --auto-removepython3-qrcode python3-typing-extensions warpinator
 
 # ---> VARIÁVEL GLOBAL DE pip3 install pytesseract
-VERSÃO <--- 
 # (Atualizada por script externo de controle de versão)
-VIDYA_VERSION = "0.2.17"
+VIDYA_VERSION = "0.2.22"
 VIDYA_AUTHOR = "Cloter Migiorini Fiho"
 # Injeta no ambiente para leitura em qualquer arquivo via: os.getenv("VIDYA_VERSION")
 os.environ["VIDYA_VERSION"] = VIDYA_VERSION 

@@ -1,9 +1,13 @@
 # Arquivo: core/vidya_optuna_tuner.py
 
+import os
 import cv2
 import numpy as np
 import optuna
 import logging
+import tesserocr
+import tesserocr
+from PIL import Image
 from PyQt5 import QtCore
 from core.logger import get_logger
 
@@ -38,7 +42,6 @@ class VidyaOptunaTuner(QtCore.QThread):
             total_trials = self.config.get("trials", 150)
             
             # ---> INÍCIO DA INSERÇÃO: Controle Avançado de Multithreading <---
-            import os
             
             # 1. Resgata o limite de núcleos configurado pelo utilizador na aba OCR
             jobs = int(self.settings.get("ocr_jobs", 2))
@@ -179,8 +182,7 @@ class VidyaOptunaTuner(QtCore.QThread):
     # FUNÇÃO OBJETIVO 2: OCR (Métrica: Confiança Tesseract)
     # =========================================================================
     def _objective_ocr(self, trial):
-        """Tenta encontrar os parâmetros de Binarização que geram o texto mais legível."""
-        import pytesseract
+        """Tenta encontrar os parâmetros de Binarização que geram o texto mais legível usando a API C++ (tesserocr)."""
         
         denoise_h = trial.suggest_float("ocr_denoise_h", 0.0, 20.0)
         clahe_clip = trial.suggest_float("ocr_clahe_clip", 1.0, 6.0)
@@ -192,7 +194,7 @@ class VidyaOptunaTuner(QtCore.QThread):
         
         for path, img in self.ram_images.items():
             try:
-                # Replica o pipeline de OCR Prep
+                # 1. Replica o pipeline de OCR Prep (OpenCV)
                 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img.copy()
                 
                 if denoise_h > 0.5:
@@ -203,20 +205,28 @@ class VidyaOptunaTuner(QtCore.QThread):
                 
                 bin_img = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, block_size, c_val)
                 
-                # Extrai os dados do motor Tesseract em memória
-                data = pytesseract.image_to_data(bin_img, lang=self.settings.get("ocr_lang", "por"), output_type=pytesseract.Output.DICT)
+                # 2. Converte a matriz OpenCV (NumPy) para Imagem PIL (Exigência da API C++)
+                pil_img = Image.fromarray(bin_img)
                 
-                # Filtra apenas os scores de palavras reais (ignora espaços em branco/blocos com score -1)
-                confidences = [int(c) for c in data['conf'] if c != '-1']
-                
-                if confidences:
-                    avg_conf = sum(confidences) / len(confidences)
-                    total_confidence += avg_conf
+                # 3. Interage diretamente com a Memória C++ do Tesseract
+                with tesserocr.PyTessBaseAPI(lang=self.settings.get("ocr_lang", "por")) as api:
+                    api.SetImage(pil_img)
+                    api.Recognize() # Executa a leitura
+                    
+                    # Retorna uma lista simples de inteiros com a confiança de cada palavra (0 a 100)
+                    confidences = api.AllWordConfidences() 
+                    
+                    if confidences:
+                        # Opcional: Remover zeros absolutos que geralmente representam lixo/manchas
+                        valid_confs = [c for c in confidences if c > 0]
+                        if valid_confs:
+                            avg_conf = sum(valid_confs) / len(valid_confs)
+                            total_confidence += avg_conf
+                            
                 valid_samples += 1
                 
             except Exception as e:
-                # Se o Tesseract não estiver instalado, a otimização de OCR falhará graciosamente
-                logger.error(f"Erro no ensaio de OCR: {e}")
+                logger.error(f"Erro no ensaio de OCR via C++: {e}")
                 return 0.0
 
         return total_confidence / max(1, valid_samples)

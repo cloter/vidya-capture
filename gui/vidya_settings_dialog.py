@@ -1482,7 +1482,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_effort = QtWidgets.QFormLayout(grp_effort)
 
         self.combo_opt_trials = QtWidgets.QComboBox()
-        self.combo_opt_trials.addItem("Relâmpago (10 iterações)", 10)
+        self.combo_opt_trials.addItem("Relâmpago (5 iterações)", 10)
         self.combo_opt_trials.addItem("Rápido (50 iterações)", 50)
         self.combo_opt_trials.addItem("Equilibrado (150 iterações)", 150)
         self.combo_opt_trials.addItem("Profundo (300 iterações)", 300)

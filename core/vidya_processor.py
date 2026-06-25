@@ -3,13 +3,14 @@
 import os
 import json
 import time
-from datetime import datetime, timezone
+import re
 import cv2
 import numpy as np
-from PIL import Image
-from PyQt5 import QtCore
 import hashlib 
 import shutil
+from datetime import datetime, timezone
+from PIL import Image
+from PyQt5 import QtCore
 from core.logger import get_logger
 
 logger = get_logger("BatchProcessor")
@@ -176,6 +177,18 @@ class VidyaImageProcessor(QtCore.QThread):
                         logger.warning(f"Aviso: Não foi possível remover lixo residual '{f_name}': {e}")
             # ---> FIM DA PURGA PREVENTIVA <---
             
+            # ---> INSERÇÃO: CARREGAMENTO ANTECIPADO DO MANIFESTO <---
+            project_manifest_path = os.path.join(self.working_dir, "project.json")
+            manifest_data = {}
+            
+            if os.path.exists(project_manifest_path):
+                try:
+                    with open(project_manifest_path, 'r', encoding='utf-8') as f:
+                        manifest_data = json.load(f)
+                except Exception as e:
+                    logger.error(f"Falha ao carregar manifesto central: {e}")
+            # --------------------------------------------------------
+            
             total_files = len(self.valid_pairs)
             processed_images = []
             original_geom_images = []
@@ -187,9 +200,11 @@ class VidyaImageProcessor(QtCore.QThread):
             dewarp_agg = float(self.settings.get("dewarp_aggressiveness", 1.0))
             pdf_source = self.settings.get("pdf_source", "tratadas")
 
+            # ---> ALTERAÇÃO: Chamada do método correto passando manifest_data <---
             do_ocr_prep = self.flags.get("ocr") and self.settings.get("ocr_preprocess", True)
             if do_ocr_prep:
-                den_h, clahe_clip, block_s, c_val = self._calculate_ocr_heuristics()
+                den_h, clahe_clip, block_s, c_val = self._get_ocr_parameters(manifest_data)
+            # --------------------------------------------------------------------
 
             target_ext, encode_params = self._get_encode_params() # <--- BUSCA OS PARÂMETROS
 
@@ -377,15 +392,15 @@ class VidyaImageProcessor(QtCore.QThread):
             # =========================================================================
             # 2. CARREGAMENTO CENTRALIZADO DO MANIFESTO
             # =========================================================================
-            project_manifest_path = os.path.join(self.working_dir, "project.json")
-            manifest_data = {}
-            
-            if os.path.exists(project_manifest_path):
-                try:
-                    with open(project_manifest_path, 'r', encoding='utf-8') as f:
-                        manifest_data = json.load(f)
-                except Exception as e:
-                    logger.error(f"Falha ao carregar manifesto central: {e}")
+            # project_manifest_path = os.path.join(self.working_dir, "project.json")
+            # manifest_data = {}
+            # 
+            # if os.path.exists(project_manifest_path):
+            #     try:
+            #         with open(project_manifest_path, 'r', encoding='utf-8') as f:
+            #             manifest_data = json.load(f)
+            #     except Exception as e:
+            #         logger.error(f"Falha ao carregar manifesto central: {e}")
 
             # --- NOVA LÓGICA DE NOMEAÇÃO ---
             folder_name = os.path.basename(self.working_dir)
@@ -398,7 +413,6 @@ class VidyaImageProcessor(QtCore.QThread):
                 project_name = manifest_data.get("project_name", self.settings.get("project_name", folder_name))
             
             # 3. Sanitiza a string para evitar quebra de I/O na gravação de PDFs, TSVs e BagIt
-            import re
             safe_project_name = re.sub(r'[\\/*?:"<>|]', "", project_name).strip()
             
             # Injeta o nome oficial sanitizado de volta no manifesto para os exportadores downstream
@@ -696,6 +710,7 @@ class VidyaSingleProcessor(QtCore.QThread):
             # ---> INÍCIO DA CORREÇÃO: CARREGAR O MANIFESTO ANTES DE INICIAR O LOOP <---
             project_manifest_path = os.path.join(self.working_dir, "project.json")
             manifest_data = {}
+            
             if os.path.exists(project_manifest_path):
                 try:
                     with open(project_manifest_path, 'r', encoding='utf-8') as f:
@@ -719,6 +734,7 @@ class VidyaSingleProcessor(QtCore.QThread):
             do_ocr_prep = self.flags.get("ocr") and self.settings.get("ocr_preprocess", True)
             if do_ocr_prep:
                 den_h, clahe_clip, block_s, c_val = self._get_ocr_parameters(manifest_data)
+            # --------------------------------------------------------------------
 
             target_ext, encode_params = self._get_encode_params()
 
@@ -908,14 +924,15 @@ class VidyaSingleProcessor(QtCore.QThread):
             # =========================================================================
             # 2. CARREGAMENTO CENTRALIZADO DO MANIFESTO
             # =========================================================================
-            project_manifest_path = os.path.join(self.working_dir, "project.json")
-            manifest_data = {}
-            
-            if os.path.exists(project_manifest_path):
-                try:
-                    with open(project_manifest_path, 'r', encoding='utf-8') as f:
-                        manifest_data = json.load(f)
-                except: pass
+            # project_manifest_path = os.path.join(self.working_dir, "project.json")
+            # manifest_data = {}
+            #
+            # if os.path.exists(project_manifest_path):
+            #     try:
+            #         with open(project_manifest_path, 'r', encoding='utf-8') as f:
+            #             manifest_data = json.load(f)
+            #     except Exception as e:
+            #         logger.error(f"Falha ao carregar manifesto central: {e}")
 
             # --- NOVA LÓGICA DE NOMEAÇÃO ---
             folder_name = os.path.basename(self.working_dir)
@@ -923,8 +940,8 @@ class VidyaSingleProcessor(QtCore.QThread):
             project_name = manifest_data.get("metadata", {}).get("dcterms:title", "").strip()
             if not project_name:
                 project_name = manifest_data.get("project_name", self.settings.get("project_name", folder_name))
-                
-            import re
+            
+            # 3. Sanitiza a string para evitar quebra de I/O na gravação de PDFs, TSVs e BagIt    
             safe_project_name = re.sub(r'[\\/*?:"<>|]', "", project_name).strip()
             
             manifest_data["project_name"] = safe_project_name
