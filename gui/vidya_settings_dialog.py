@@ -1585,13 +1585,49 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.slider_int_impr = self._create_ocr_slider(self.settings.get("ocr_int_impressao", 80))
         self.slider_tam_manchas = self._create_ocr_slider(self.settings.get("ocr_tam_manchas", 10))
         self.slider_prof_manchas = self._create_ocr_slider(self.settings.get("ocr_prof_manchas", 0))
-        
+
+        # ---> INÍCIO DA ALTERAÇÃO: LABELS DOS PARÂMETROS CALCULADOS (MESMA LINHA) <---
+        self.lbl_calc_desfoque = QtWidgets.QLabel("Desfoque: 0.00")
+        self.lbl_calc_expansao = QtWidgets.QLabel("Expansão: 0.00")
+        self.lbl_calc_bloco = QtWidgets.QLabel("Bloco: 0")
+        self.lbl_calc_valor_c = QtWidgets.QLabel("Valor C: 0")
+
+        # Mantém a fonte monoespaçada e a estilização visual coerente
+        calc_style = "color: #2980b9; font-family: monospace; font-weight: bold; font-size: 10pt;"
+        self.lbl_calc_desfoque.setStyleSheet(calc_style)
+        self.lbl_calc_expansao.setStyleSheet(calc_style)
+        self.lbl_calc_bloco.setStyleSheet(calc_style)
+        self.lbl_calc_valor_c.setStyleSheet(calc_style)
+
+        # Alinhamento horizontal em uma única linha
+        lyt_calc = QtWidgets.QHBoxLayout()
+        lyt_calc.setContentsMargins(0, 5, 0, 0)
+        lyt_calc.addWidget(self.lbl_calc_desfoque)
+        lyt_calc.addWidget(self.lbl_calc_expansao)
+        lyt_calc.addWidget(self.lbl_calc_bloco)
+        lyt_calc.addWidget(self.lbl_calc_valor_c)
+
+        wdg_calc_container = QtWidgets.QWidget()
+        wdg_calc_container.setLayout(lyt_calc)
+
+        # Conexão dos sliders para atualização em tempo real
+        self.slider_cor_papel.valueChanged.connect(self._update_ocr_calculated_params)
+        self.slider_int_impr.valueChanged.connect(self._update_ocr_calculated_params)
+        self.slider_tam_manchas.valueChanged.connect(self._update_ocr_calculated_params)
+        self.slider_prof_manchas.valueChanged.connect(self._update_ocr_calculated_params)
+        # ---> FIM DA ALTERAÇÃO <---        
+
         lbl_style = "font-size: 8pt; color: gray;"
         lyt_cv2.addRow("", self.chk_ocr_preprocess)
         lyt_cv2.addRow(QtWidgets.QLabel("Cor do Papel<br><span style='%s'>Claro (0) → Escuro (100)</span>" % lbl_style), self.slider_cor_papel)
         lyt_cv2.addRow(QtWidgets.QLabel("Intensidade Impressão<br><span style='%s'>Fraca (0) → Forte (100)</span>" % lbl_style), self.slider_int_impr)
         lyt_cv2.addRow(QtWidgets.QLabel("Tamanho Manchas<br><span style='%s'>Pequenas (0) → Grandes (100)</span>" % lbl_style), self.slider_tam_manchas)
         lyt_cv2.addRow(QtWidgets.QLabel("Profundidade Manchas<br><span style='%s'>Superficiais (0) → Densas (100)</span>" % lbl_style), self.slider_prof_manchas)
+        
+        lyt_cv2.addRow("", wdg_calc_container)
+        
+        self._update_ocr_calculated_params()
+        
         layout.addWidget(grp_cv2)
 
         grp_tess = QtWidgets.QGroupBox("Motor OCRmyPDF (Tesseract)")
@@ -1647,6 +1683,47 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         layout.addStretch()
         self.tabs.addTab(tab, "OCR")
 
+    def _update_ocr_calculated_params(self, *args):
+        """Calcula e exibe em tempo real os parâmetros matemáticos que serão passados para o OpenCV"""
+        escurecimento = self.slider_cor_papel.value()
+        intensidade = self.slider_int_impr.value()
+        extensao = self.slider_tam_manchas.value()
+        profundidade = self.slider_prof_manchas.value()
+
+        # Desfoque (denoise_h)
+        h_base = (extensao * 0.15) + (profundidade * 0.05)
+        if intensidade < 50:
+            denoise_h = h_base * (intensidade / 50.0)
+        else:
+            denoise_h = h_base
+        denoise_h = min(denoise_h, 20.0)
+
+        # Expansão (clahe_clip)
+        clahe_base = 1.0 + (escurecimento * 0.03)
+        if intensidade < 60:
+            contrast_clip = clahe_base + ((60 - intensidade) * 0.05)
+        else:
+            contrast_clip = clahe_base
+        contrast_clip = min(contrast_clip, 6.0)
+
+        # Bloco (block_size)
+        raw_block = int(19 + (extensao * 0.4))
+        block_size = raw_block + 1 if raw_block % 2 == 0 else raw_block
+
+        # Valor C (c_final)
+        c_base = 8 + (escurecimento * 0.05) + (profundidade * 0.1)
+        if intensidade < 70:
+            c_final = c_base - ((70 - intensidade) * 0.15)
+        else:
+            c_final = c_base
+        c_final = int(max(2, min(c_final, 25)))
+
+        # Atualiza a interface gráfica, limitando os floats a 2 casas decimais para manter a legibilidade
+        self.lbl_calc_desfoque.setText(f"Desfoque: {denoise_h:.2f}")
+        self.lbl_calc_expansao.setText(f"Expansão: {contrast_clip:.2f}")
+        self.lbl_calc_bloco.setText(f"Bloco: {block_size}")
+        self.lbl_calc_valor_c.setText(f"Valor C: {c_final}")
+        
     def _save_and_close(self):
         tab_name = self.current_tab_name
         
