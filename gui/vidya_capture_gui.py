@@ -904,14 +904,19 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
                 
         return super().eventFilter(source, event)
 
-    def show_review_pair(self, left_path, right_path=None):
+    def show_review_pair(self, left_path, right_path=None, force_reload=False):
         # --- PROTEÇÃO CONTRA DRIFT: Impede recarregar a imagem se ela já está aberta na tela ---
-        if self.is_reviewing and getattr(self, 'review_left_path', None) == left_path and getattr(self, 'review_right_path', None) == right_path:
+        if not force_reload and self.is_reviewing and getattr(self, 'review_left_path', None) == left_path and getattr(self, 'review_right_path', None) == right_path:
             return
             
         logger.info("Entrando no Modo de Revisão / Inserção.")
         if hasattr(self, 'undo_manager'): self.undo_manager.clear() # <--- LIMPA UNDO
-        self._save_review_crop_if_needed()
+        
+        # Se for um recarregamento forçado por alteração externa (Auto Crop), 
+        # não salvamos o estado da tela para não destruir os novos dados do HD.
+        if not force_reload:
+            self._save_review_crop_if_needed()
+            
         self._clear_clips()
         
         # ---> INÍCIO DA PROTEÇÃO CONTRA DRIFT: Inicializa a memória
@@ -1558,11 +1563,11 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
             # Integração fluída: Verifica se a imagem do AutoCrop está atualmente aberta no visor
             if self.is_reviewing:
                 current_review_paths = [getattr(self, 'review_left_path', None), getattr(self, 'review_right_path', None)]
-                
-                # Se alguma das imagens alvo está sendo visualizada agora, recarregamos a interface gráfica instantaneamente
+                # Se alguma das imagens alvo está sendo visualizada agora, 
+                #  recarregamos a interface gráfica instantaneamente
                 if any(p in current_review_paths for p in paths if p is not None):
                     logger.info("Auto Crop injetou metadados na imagem ativa. Atualizando os polígonos visuais.")
-                    self.show_review_pair(self.review_left_path, self.review_right_path)
+                    self.show_review_pair(self.review_left_path, self.review_right_path, force_reload=True)
                     return # Foge para não mostrar o MessageBox intrusivo, a prova de sucesso é visual
                     
             # Se a imagem processada estava escondida (o usuário editava outra coisa), exibe a confirmação

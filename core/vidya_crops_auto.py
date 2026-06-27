@@ -6,7 +6,7 @@ import glob
 import cv2
 import numpy as np
 from core.logger import get_logger
-from core.config import load_settings # <--- ADICIONADO AQUI
+from core.config import load_settings
 
 logger = get_logger("AutoCrop")
 
@@ -15,13 +15,17 @@ class VidyaCropsAuto:
     def process_images(image_paths: list) -> int:
         settings = load_settings()
         
-        # Carrega as configurações do utilizador (ou assume os padrões seguros de fábrica)
+        # Carrega as configurações de Crop
         blur_val = settings.get("ac_blur", 11)
         dilate_val = settings.get("ac_dilate", 2)
         pad_val = settings.get("ac_pad", 3) / 100.0
         min_area_val = settings.get("ac_min_area", 1.5) / 100.0
         invert_mode = settings.get("ac_invert", "Automático")
         max_crops = int(settings.get("ac_max_crops", 0))
+        
+        # Novas variáveis de detecção de fundo
+        bg_detect = settings.get("bg_detect_enabled", False)
+        bg_sens = int(settings.get("bg_detect_sensitivity", 0))
         
         processed_count = 0
         for img_path in image_paths:
@@ -47,23 +51,22 @@ class VidyaCropsAuto:
                 
                 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 
-                # Desfoque paramétrico (Garante matriz ímpar para o OpenCV não quebrar)
+                # Desfoque paramétrico
                 b_size = blur_val if blur_val % 2 != 0 else blur_val + 1
                 blurred = cv2.GaussianBlur(gray, (b_size, b_size), 0)
                 
                 # Binarização de Otsu
                 _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                 
-                # Lógica Direcionada de Contraste (Inversão de Fundo)
+                # Lógica Direcionada de Contraste
                 if invert_mode == "Forçar Fundo Branco":
                     thresh = cv2.bitwise_not(thresh)
                 elif invert_mode == "Automático":
                     border_pixels = np.concatenate([thresh[0, :], thresh[-1, :], thresh[:, 0], thresh[:, -1]])
                     if np.mean(border_pixels) > 127:
                         thresh = cv2.bitwise_not(thresh)
-                # O "Forçar Fundo Preto" é ignorado de propósito: O Otsu por padrão já deixa fundos pretos como 0 e os papéis como 255.
                 
-                # Dilatação Morfológica Paramétrica (Unir papéis rasgados ou textos desbotados)
+                # Dilatação Morfológica Paramétrica
                 if dilate_val > 0:
                     kernel = np.ones((5, 5), np.uint8)
                     thresh = cv2.dilate(thresh, kernel, iterations=dilate_val)
@@ -73,29 +76,58 @@ class VidyaCropsAuto:
                 valid_rects = []
                 for c in contours:
                     area = cv2.contourArea(c)
-                    # Filtro anti-ruído: Tamanho estritamente ditado pelas preferências
                     if img_area * min_area_val < area < img_area * 0.95:
                         cx, cy, cw, ch = cv2.boundingRect(c)
-                        # Padding automático com a porcentagem definida na UI
+                        # Padding automático
                         pad_x, pad_y = int(cw * pad_val), int(ch * pad_val)
                         nx = max(0, cx - pad_x)
                         ny = max(0, cy - pad_y)
                         nw = min(w - nx, cw + 2 * pad_x)
                         nh = min(h - ny, ch + 2 * pad_y)
-                        valid_rects.append((nx, ny, nw, nh))
+                        
+                        # --- INÍCIO: Inteligência Poligonal Vetorial ---
+                        poly_pts = []
+                        if bg_detect:
+                            peri = cv2.arcLength(c, True)
+                            
+                            # O Epsilon base padrão costuma ser 2% (0.02). 
+                            # Sensibilidade Positiva (+50): Menor epsilon -> Mais vértices, gruda nos rasgos.
+                            # Sensibilidade Negativa (-50): Maior epsilon -> Menos vértices, tende a um quadrilátero.
+                            eps_factor = 0.02 * (1.0 - (bg_sens / 100.0))
+                            
+                            # Blindagem para garantir que o algoritmo não quebre com fatores extremos
+                            eps_factor = max(0.001, min(eps_factor, 0.1))
+                            
+                            approx = cv2.approxPolyDP(c, eps_factor * peri, True)
+                            
+                            for pt in approx:
+                                px, py = int(pt[0][0]), int(pt[0][1])
+                                # Aplica o padding também aos pontos do polígono
+                                # Se pad_x/y forem 0, os pontos ficam intactos. 
+                                # A direção da expansão depende da posição do ponto em relação ao centro (cx, cy)
+                                if px < cx: px = max(0, px - pad_x)
+                                else:       px = min(w - 1, px + pad_x)
+                                
+                                if py < cy: py = max(0, py - pad_y)
+                                else:       py = min(h - 1, py + pad_y)
+                                
+                                poly_pts.append({"x": px, "y": py})
+                        # --- FIM: Inteligência Poligonal Vetorial ---
+                        
+                        # Salvamos o polígono como o quinto elemento da tupla
+                        valid_rects.append((nx, ny, nw, nh, poly_pts))
                 
                 if not valid_rects:
                     logger.warning(f"Auto Crop: Nenhum documento válido detectado em {base_name}")
                     continue
                     
-                # Ordena os recortes do maior para o menor
+                # Ordena os recortes do maior para o menor (compara a área baseada em W * H)
                 valid_rects.sort(key=lambda r: r[2]*r[3], reverse=True)
                 
-                # Aplica o limite máximo de quadros se houver
                 if max_crops > 0:
                     valid_rects = valid_rects[:max_crops]
                 
-                # 3. Grava o MAIOR documento no JSON principal (O quadro que herda os metadados pai)
+                # 3. Grava o MAIOR documento no JSON principal
                 main_rect = valid_rects[0]
                 main_data = {}
                 if os.path.exists(main_json):
@@ -104,7 +136,8 @@ class VidyaCropsAuto:
                 
                 main_data["crop_geometry"] = {
                     "x": main_rect[0], "y": main_rect[1],
-                    "width": main_rect[2], "height": main_rect[3], "polygon": []
+                    "width": main_rect[2], "height": main_rect[3], 
+                    "polygon": main_rect[4] # <- O array preenchido ou vazio
                 }
                 
                 with open(main_json, 'w', encoding='utf-8') as f:
@@ -117,7 +150,8 @@ class VidyaCropsAuto:
                         "source_image": base_name,
                         "crop_geometry": {
                             "x": rect[0], "y": rect[1],
-                            "width": rect[2], "height": rect[3], "polygon": []
+                            "width": rect[2], "height": rect[3], 
+                            "polygon": rect[4]
                         }
                     }
                     with open(clip_json, 'w', encoding='utf-8') as f:

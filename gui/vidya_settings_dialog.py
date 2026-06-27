@@ -416,6 +416,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.spin_jpg_quality.setValue(95)
         self.combo_tiff_compression.setCurrentText("Sem compressão")        
 
+        self._reset_bg_defaults()
+
     def _build_images_tab(self):
         tab = QtWidgets.QWidget()
         self.images_form_layout = QtWidgets.QFormLayout(tab)
@@ -501,11 +503,60 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.combo_ac_preset.blockSignals(True)
         self.combo_ac_preset.setCurrentText(saved_preset)
         self.combo_ac_preset.blockSignals(False)
+        
+        # =========================================================================
+        # INSERÇÃO: CONTROLE DE COR DE FUNDO (COM OPÇÃO TRANSPARENTE)
+        # =========================================================================
+        grp_bg_control = QtWidgets.QGroupBox("Controle de Cor de Fundo")
+        f_bg = grp_bg_control.font(); f_bg.setBold(True); grp_bg_control.setFont(f_bg)
+        grp_bg_control.setStyleSheet("QLabel, QComboBox, QSlider, QCheckBox { font-weight: normal; }")
+        lyt_bg = QtWidgets.QFormLayout(grp_bg_control)
+
+        self.chk_bg_detect = QtWidgets.QCheckBox("Detectar e converter a cor de fundo")
+        self.chk_bg_detect.setChecked(self.settings.get("bg_detect_enabled", False))
+
+        self.slider_bg_sens = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.slider_bg_sens.setRange(-50, 50)
+        self.slider_bg_sens.setValue(int(self.settings.get("bg_detect_sensitivity", 0)))
+        self.slider_bg_sens.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.slider_bg_sens.setTickInterval(10)
+
+        self.lbl_bg_sens_val = QtWidgets.QLabel(f"+{self.slider_bg_sens.value()}" if self.slider_bg_sens.value() > 0 else str(self.slider_bg_sens.value()))
+        self.lbl_bg_sens_val.setMinimumWidth(35)
+        self.slider_bg_sens.valueChanged.connect(lambda v: self.lbl_bg_sens_val.setText(f"+{v}" if v > 0 else str(v)))
+
+        lyt_sens = QtWidgets.QHBoxLayout()
+        lyt_sens.addWidget(self.lbl_bg_sens_val)
+        lyt_sens.addWidget(self.slider_bg_sens)
+
+        self.combo_bg_color = QtWidgets.QComboBox()
+        # ---> LISTA ATUALIZADA AQUI <---
+        self.combo_bg_color.addItems(["Preto", "Branco", "Cinza", "Transparente"])
+        
+        saved_bg_color = self.settings.get("bg_replace_color", "Preto")
+        # ---> VERIFICAÇÃO ATUALIZADA AQUI <---
+        if saved_bg_color not in ["Preto", "Branco", "Cinza", "Transparente"]:
+            self.combo_bg_color.addItem(saved_bg_color)
+            
+        self.combo_bg_color.addItem("Customizado...")
+        
+        self.combo_bg_color.blockSignals(True)
+        self.combo_bg_color.setCurrentText(saved_bg_color)
+        self.combo_bg_color.blockSignals(False)
+        
+        self.combo_bg_color.currentTextChanged.connect(self._on_bg_color_changed)
+
+        lyt_bg.addRow(self.chk_bg_detect)
+        lyt_bg.addRow("Sensibilidade da detecção:", lyt_sens)
+        lyt_bg.addRow("Substituir cor do fundo por:", self.combo_bg_color)
+
+        self.images_form_layout.addRow(grp_bg_control)
+        # =========================================================================
 
         # =========================================================================
         # 2. FORMATO E QUALIDADE DAS IMAGENS DE SAÍDA - EM BAIXO
         # =========================================================================
-        images_label = QtWidgets.QLabel("<br><b>Formato e Qualidade das Imagens de Saída</b><br><small>Ajuste para uma boa relação de tamanho e qualidade do PDF final</small>")
+        images_label = QtWidgets.QLabel("<b>Formato e Qualidade das Imagens de Saída</b><br><small>Ajuste para uma boa relação de tamanho e qualidade do PDF final</small>")
         images_label.setWordWrap(True)
         self.images_form_layout.addRow(images_label)
         
@@ -546,7 +597,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         # =========================================================================
         # 3. CONTROLE DA IMAGEM CAPTURADA (POST-PROCESSING) + BOTÃO RESTAURAR
         # =========================================================================
-        post_label = QtWidgets.QLabel("<br><b>Controle da imagem capturada</b><br><small>Ajustes numéricos aplicados via software após o clique de qualquer equipamento.</small>")
+        post_label = QtWidgets.QLabel("<b>Controle da imagem capturada</b><br><small>Ajustes numéricos aplicados via software após o clique de qualquer equipamento.</small>")
         post_label.setWordWrap(True)
         self.images_form_layout.addRow(post_label)
         
@@ -595,6 +646,49 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.tabs.addTab(tab, "Imagens")
         self._on_image_format_changed(self.combo_format.currentText())
 
+    def _on_bg_color_changed(self, text):
+        if text == "Customizado...":
+            initial_color = QtGui.QColor(QtCore.Qt.black)
+            current_saved = self.settings.get("bg_replace_color", "Preto")
+            
+            if current_saved.startswith("#"):
+                initial_color = QtGui.QColor(current_saved)
+            elif current_saved == "Branco":
+                initial_color = QtGui.QColor(QtCore.Qt.white)
+            elif current_saved == "Cinza":
+                initial_color = QtGui.QColor(QtCore.Qt.gray)
+            elif current_saved == "Transparente":
+                initial_color = QtGui.QColor(QtCore.Qt.transparent)
+
+            # Abre o seletor nativo do Qt com suporte a canal Alpha (Transparência)
+            color = QtWidgets.QColorDialog.getColor(
+                initial_color, 
+                self, 
+                "Escolher cor de fundo customizada",
+                QtWidgets.QColorDialog.ShowAlphaChannel
+            )
+            
+            if color.isValid():
+                # Usa formato hexadecimal com Alpha (ex: #AARRGGBB) se não for totalmente opaco, ou padrão #RRGGBB
+                if color.alpha() < 255:
+                    hex_val = color.name(QtGui.QColor.HexArgb).upper()
+                else:
+                    hex_val = color.name().upper()
+                
+                if self.combo_bg_color.findText(hex_val) == -1:
+                    idx = self.combo_bg_color.count() - 1
+                    self.combo_bg_color.insertItem(idx, hex_val)
+                
+                self.combo_bg_color.blockSignals(True)
+                self.combo_bg_color.setCurrentText(hex_val)
+                self.combo_bg_color.blockSignals(False)
+                
+                self.settings["bg_replace_color"] = hex_val 
+            else:
+                self.combo_bg_color.blockSignals(True)
+                self.combo_bg_color.setCurrentText(self.settings.get("bg_replace_color", "Preto"))
+                self.combo_bg_color.blockSignals(False)
+                
     def _on_image_format_changed(self, fmt):
         lbl_jpg = self.images_form_layout.labelForField(self.row_jpg)
         lbl_png = self.images_form_layout.labelForField(self.row_png)
@@ -1257,6 +1351,15 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         slider.setTickInterval(10)
         return slider
 
+    def _reset_bg_defaults(self):
+        """Restaura os padrões de fábrica específicos da detecção de fundo."""
+        self.chk_bg_detect.setChecked(False)
+        self.slider_bg_sens.setValue(0)
+        
+        # Bloqueia sinais temporariamente para evitar loops ou abertura indesejada de paletas
+        self.combo_bg_color.blockSignals(True)
+        self.combo_bg_color.setCurrentText("Branco")
+        self.combo_bg_color.blockSignals(False)
            
     def _reset_markers_defaults(self):
         """Restaura os padrões de fábrica específicos da aba de Marcadores e Bordas."""
@@ -1428,7 +1531,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(tab)
 
         info_label = QtWidgets.QLabel(
-            "<b>Calibração Preditiva por Inteligência Artificial (Optuna)</b><br>"
+            "<b>Calibração Preditiva por Inteligência Artificial (Tuning)</b><br>"
             "<small>O sistema sorteará amostras do projeto atual. Você fará a marcação ideal nestas amostras "
             "e a IA testará milhares de parâmetros para encontrar a matemática perfeita para o resto do lote.</small>"
         )
@@ -1793,6 +1896,12 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             self.settings["ac_min_area"] = self.slider_ac_area.value() / 10.0 
             self.settings["ac_invert"] = self.combo_ac_invert.currentText()
             self.settings["ac_max_crops"] = self.spin_ac_max.value()
+            
+            # ---> INSERIR AQUI: Salvar o estado da remoção de fundo <---
+            self.settings["bg_detect_enabled"] = self.chk_bg_detect.isChecked()
+            self.settings["bg_detect_sensitivity"] = self.slider_bg_sens.value()
+            self.settings["bg_replace_color"] = self.combo_bg_color.currentText()
+            # ------------------------------------------------------------
         
         self.settings["proc_crop"] = self.chk_crop.isChecked()
         self.settings["proc_deskew"] = self.chk_deskew.isChecked()

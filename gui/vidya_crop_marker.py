@@ -129,15 +129,21 @@ class VidyaCropMarker(QtWidgets.QGraphicsPolygonItem):
     # EXPORTAÇÃO E IMPORTAÇÃO GEOMÉTRICA
     # =========================================================================
     def get_geometry(self) -> dict:
-        rect = self.sceneBoundingRect()
         poly = self.polygon()
+        
+        # 1. Extrai o bounding box matemático EXATO do polígono (Ignora a espessura da linha/Pen)
+        math_rect = poly.boundingRect()
+        
+        # 2. Mapeia esse retângulo puro para as coordenadas globais da cena
+        scene_rect = self.mapToScene(math_rect).boundingRect()
+        
         pts = [{"x": poly.at(i).x(), "y": poly.at(i).y()} for i in range(poly.count())]
         
         return {
-            "x": rect.x(),
-            "y": rect.y(),
-            "width": rect.width(),
-            "height": rect.height(),
+            "x": scene_rect.x(),
+            "y": scene_rect.y(),
+            "width": scene_rect.width(),
+            "height": scene_rect.height(),
             "polygon": pts
         }
 

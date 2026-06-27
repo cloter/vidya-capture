@@ -7,11 +7,11 @@ import json
 import signal
 from PyQt5 import QtWidgets, QtCore, QtGui
 
-# pip3 install pytesseract optuna
+# sudo dpkg -i vidya-capture_0.2.25_all.deb; sudo apt --fix-broken install; sudo apt install python3-optuna; exit
 
 # ---> VARIÁVEL GLOBAL DE pip3 install pytesseract
 # (Atualizada por script externo de controle de versão)
-VIDYA_VERSION = "0.2.23"
+VIDYA_VERSION = "0.2.25"
 VIDYA_AUTHOR = "Cloter Migiorini Fiho"
 # Injeta no ambiente para leitura em qualquer arquivo via: os.getenv("VIDYA_VERSION")
 os.environ["VIDYA_VERSION"] = VIDYA_VERSION 

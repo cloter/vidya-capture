@@ -282,11 +282,20 @@ class VidyaImageProcessor(QtCore.QThread):
                                 img = img[y:y+h, x:x+w]
                                 applied_transforms.append("Crop Geométrico (Retangular)")
                                 
-                                # Máscara Poligonal Vetorial
+                                # Passo 2: Máscara Poligonal Vetorial (Isolamento de Fundo)
+                                bg_detect = self.settings.get("bg_detect_enabled", False)
                                 polygon_data = geom.get("polygon", [])
-                                if polygon_data and len(polygon_data) > 2:
-                                    fill_pref = self.settings.get("marker_fill_color", "Transparente")
+                                
+                                if bg_detect and polygon_data and len(polygon_data) > 2:
+                                    fill_pref = self.settings.get("bg_replace_color", "Branco")
+                                    
+                                    # Extrai os pontos absolutos mapeados pelo JSON
                                     pts = np.array([[int(p["x"]), int(p["y"])] for p in polygon_data], dtype=np.int32)
+                                    
+                                    # CORREÇÃO GEOMÉTRICA CRÍTICA: Transladar as coordenadas do polígono 
+                                    # subtraindo as âncoras X e Y do crop retangular (bounding box) que acabou de ocorrer.
+                                    pts = pts - [x, y]
+                                    
                                     mask = np.zeros(img.shape[:2], dtype=np.uint8)
                                     cv2.fillPoly(mask, [pts], 255)
                                     
@@ -297,23 +306,40 @@ class VidyaImageProcessor(QtCore.QThread):
                                         img[mask == 0] = (255, 255, 255)
                                     elif fill_pref == "Preto":
                                         img[mask == 0] = (0, 0, 0)
-                                    elif fill_pref.startswith("#") and len(fill_pref) == 7:
-                                        # Converte HEX (#RRGGBB) para Tupla BGR nativa do OpenCV
-                                        try:
-                                            r = int(fill_pref[1:3], 16)
-                                            g = int(fill_pref[3:5], 16)
-                                            b = int(fill_pref[5:7], 16)
-                                            
-                                            if img.shape[2] == 4:
-                                                img[mask == 0] = (b, g, r, 255) # Com canal Alpha
-                                            else:
-                                                img[mask == 0] = (b, g, r) # Padrão BGR
-                                        except ValueError:
-                                            img[mask == 0] = (0, 0, 0) # Fallback para preto
-                                    else: 
-                                        img[mask == 0] = (0, 0, 0) # Fallback padrão
+                                    elif fill_pref == "Cinza":
+                                        img[mask == 0] = (128, 128, 128)
+                                    elif fill_pref.startswith("#"):
+                                        # Suporte à geração HexArgb (#AARRGGBB) do seu Color Dialog do QT
+                                        if len(fill_pref) == 9: 
+                                            try:
+                                                a = int(fill_pref[1:3], 16)
+                                                r = int(fill_pref[3:5], 16)
+                                                g = int(fill_pref[5:7], 16)
+                                                b = int(fill_pref[7:9], 16)
+                                                
+                                                if img.shape[2] != 4:
+                                                    img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+                                                img[mask == 0] = (b, g, r, a)
+                                            except ValueError:
+                                                img[mask == 0] = (255, 255, 255) # Fallback branco de segurança
+                                                
+                                        # Suporte ao Hex Padrão (#RRGGBB)
+                                        elif len(fill_pref) == 7: 
+                                            try:
+                                                r = int(fill_pref[1:3], 16)
+                                                g = int(fill_pref[3:5], 16)
+                                                b = int(fill_pref[5:7], 16)
+                                                
+                                                if img.shape[2] == 4:
+                                                    img[mask == 0] = (b, g, r, 255)
+                                                else:
+                                                    img[mask == 0] = (b, g, r)
+                                            except ValueError:
+                                                img[mask == 0] = (255, 255, 255)
+                                    else:
+                                        img[mask == 0] = (255, 255, 255) # Fallback padrão se der erro de string
                                         
-                                    applied_transforms.append(f"Crop Poligonal Dinâmico (Fundo: {fill_pref})")
+                                    applied_transforms.append(f"Isolamento Vetorial de Fundo (Cor: {fill_pref})")
                     except Exception as e: logger.error(f"Erro no Crop em {base_name}: {e}")
                     # ---> FIM DA INSERÇÃO <---
 
