@@ -297,6 +297,11 @@ class VidyaThumbnailPanel(QtWidgets.QListWidget):
             try:
                 from PIL import Image
                 with Image.open(file_path) as img:
+                    # CORREÇÃO: Converte a imagem para RGB puro. 
+                    # Isso impede falhas ao salvar PNGs (RGBA) ou TIFFs (16-bit) como JPEG.
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                        
                     img.thumbnail((img_w, img_h))
                     # Salva com compressão agressiva e otimização para carregamento rápido
                     img.save(thumb_path, "JPEG", quality=70, optimize=True)
@@ -309,8 +314,9 @@ class VidyaThumbnailPanel(QtWidgets.QListWidget):
         
         if scaled_pixmap.isNull(): return
         
-        # Se o proxy acabou de ser gerado por fallback do original, garante o redimensionamento visual correto
-        if not target_pixmap_path.endswith(filename):
+        # CORREÇÃO: Se a geração da miniatura falhou e estamos carregando o arquivo de 4K direto do HD,
+        # é OBRIGATÓRIO forçar o Qt a encolher a imagem, senão ele vai colar só o "miolo" no canvas.
+        if target_pixmap_path == file_path:
             scaled_pixmap = scaled_pixmap.scaled(img_w, img_h, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
 
         canvas = QtGui.QPixmap(base_w, base_h)
@@ -657,6 +663,10 @@ class ThumbnailRebuilderWorker(QtCore.QThread):
                     
                     try:
                         with Image.open(path) as img:
+                            # CORREÇÃO: Blindagem de segurança para formatos complexos (RGBA, TIFFs)
+                            if img.mode != 'RGB':
+                                img = img.convert('RGB')
+                                
                             img.thumbnail((img_w, img_h))
                             img.save(thumb_path, "JPEG", quality=70, optimize=True)
                     except Exception as e:

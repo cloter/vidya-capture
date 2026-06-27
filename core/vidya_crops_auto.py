@@ -89,29 +89,7 @@ class VidyaCropsAuto:
                         poly_pts = []
                         if bg_detect:
                             peri = cv2.arcLength(c, True)
-                            
-                            # O Epsilon base padrão costuma ser 2% (0.02). 
-                            # Sensibilidade Positiva (+50): Menor epsilon -> Mais vértices, gruda nos rasgos.
-                            # Sensibilidade Negativa (-50): Maior epsilon -> Menos vértices, tende a um quadrilátero.
-                            eps_factor = 0.02 * (1.0 - (bg_sens / 100.0))
-                            
-                            # Blindagem para garantir que o algoritmo não quebre com fatores extremos
-                            eps_factor = max(0.001, min(eps_factor, 0.1))
-                            
-                            approx = cv2.approxPolyDP(c, eps_factor * peri, True)
-                            
-                            for pt in approx:
-                                px, py = int(pt[0][0]), int(pt[0][1])
-                                # Aplica o padding também aos pontos do polígono
-                                # Se pad_x/y forem 0, os pontos ficam intactos. 
-                                # A direção da expansão depende da posição do ponto em relação ao centro (cx, cy)
-                                if px < cx: px = max(0, px - pad_x)
-                                else:       px = min(w - 1, px + pad_x)
-                                
-                                if py < cy: py = max(0, py - pad_y)
-                                else:       py = min(h - 1, py + pad_y)
-                                
-                                poly_pts.append({"x": px, "y": py})
+
                         # --- FIM: Inteligência Poligonal Vetorial ---
                         
                         # Salvamos o polígono como o quinto elemento da tupla
@@ -135,7 +113,7 @@ class VidyaCropsAuto:
                         main_data = json.load(f)
                 
                 main_data["crop_geometry"] = {
-                    "x": main_rect[0], "ycalsse ": main_rect[1],
+                    "x": main_rect[0], "y": main_rect[1],
                     "width": main_rect[2], "height": main_rect[3], 
                     "polygon": main_rect[4] # <- O array preenchido ou vazio
                 }
