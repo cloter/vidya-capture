@@ -269,3 +269,50 @@ O sistema foi preparado para acelerar o fluxo em projetos onde mais de um docume
 * **Replicação de Configurações**: Você pode "Habilitar Replicação" para que, em fluxos de trabalho emparelhados, as edições de um marcador sejam refletidas sistematicamente.  
 * **Câmera Única Múltiplos Itens**: Se você tirar foto de múltiplas fotos/documentos espalhados numa mesa, basta usar o comando "Criar um quadro novo" para colocar um marcador sobre cada item isolado. O motor de processamento separará matematicamente cada quadro na imagem final, adicionando um sufixo rotulado (clip) ao nome de arquivo gerado de cada recorte.
 
+# **Adendo 3 \- Recorte Automático (Auto Crop)**
+
+## **1\. Introdução à Inteligência de Recorte Automático**
+
+No fluxo laboratorial de digitalização, isolar o documento do fundo da mesa de captura é um passo crítico para a qualidade da exportação. O Vidya Capture possui um motor de Inteligência de Recorte Automático (Auto Crop) avançado, que atua analisando matematicamente o contraste da imagem para encontrar as bordas do papel, substituindo a necessidade de ajustar manualmente os polígonos de corte. Esse módulo integra a interface gráfica (GUI), o painel de configurações e o núcleo de processamento assíncrono para garantir recortes precisos e preservação dos metadados.
+
+## **2\. Configuração Inicial (Preferências)**
+
+As regras que governam a inteligência de recorte são configuradas através da janela de Preferências (tecla `F2`). As configurações do Auto Crop estão localizadas na **Aba Imagens**.
+
+Nesta aba, você encontrará a seção **Inteligência de Recorte Automático (Auto Crop)**, que oferece os seguintes controles:
+
+* **Perfil de Detecção:** Permite carregar pré-definições prontas para lidar com os cenários mais comuns (ex: "Fundo Muito Escuro", "Fundo Muito Claro" ou "Padrão de Fábrica").  
+* **Desfoque de Fusão (Ímpar):** Controla o algoritmo *Gaussian Blur*, que suaviza a imagem para ignorar pequenos defeitos. É ajustável entre 3 e 31, sendo sempre forçado a um número ímpar matematicamente para compatibilidade com o motor OpenCV.  
+* **Dilatação de Fissuras:** Define a intensidade da operação morfológica de dilatação (de 0 a 10), muito útil para "unir" virtualmente papéis rasgados ou bordas muito desbotadas antes do cálculo do corte.  
+* **Margem de Segurança:** Adiciona automaticamente uma margem extra (padding) de 0% a 15% ao redor da área de corte, evitando que caracteres rentes à borda sejam perdidos.  
+* **Área Mínima do Recorte:** Define o tamanho mínimo (de 0.1% a 10.0% da imagem total) que o sistema considerará como um documento válido, ignorando manchas pequenas e sujidades no fundo.  
+* **Cálculo de Contraste:** Define a heurística de reconhecimento das bordas. Se ajustado para "Automático", o algoritmo lê estatisticamente os pixels da borda da imagem e inverte a máscara binária (usando a função *bitwise\_not*) apenas se o fundo for predominantemente claro. Também pode ser forçado para "Fundo Preto" ou "Fundo Branco".  
+* **Número Máximo de Quadros:** Em cenários de Câmera Única com múltiplos documentos espalhados na mesa, limita a quantidade de recortes extraídos de uma mesma foto (0 \= ilimitado).
+
+## 
+
+## **3\. Operação de Recorte na Interface Gráfica (GUI)**
+
+A aplicação do Auto Crop pode ser feita dinamicamente durante o uso da interface, sem depender da exportação em lote. Esta interação ocorre através do painel de miniaturas.
+
+**Como aplicar o Auto Crop individualmente:**
+
+1. Na barra de miniaturas à esquerda, clique com o botão direito sobre a foto (ou par de fotos) desejada.  
+2. Selecione a opção **Criar recortes automaticamente (Auto Crop)** no menu de contexto.  
+3. **Topologia de Berço em V:** Se o seu laboratório estiver configurado no modo de Câmera Dupla (Página Dupla), o sistema protegerá a integridade do trabalho abrindo uma janela de confirmação. O operador poderá escolher aplicar o Auto Crop em **"Somente Esquerda"**, **"Somente Direita"** ou **"Em Ambas"**. No modo Câmera Única (Mesa Plana), a ação é direta.  
+4. Durante o processo, o ponteiro do rato ficará em estado de espera (*WaitCursor*).  
+5. **Atualização em Tempo Real:** Se as imagens selecionadas estiverem ativas no visor de edição (Modo de Revisão), a GUI redesenhará os marcadores virtuais de corte quase imediatamente para refletir as novas coordenadas calculadas pela Inteligência Artificial. Caso contrário, o sistema exibirá uma notificação informando em quantas imagens os recortes foram aplicados. Se a inteligência falhar por baixo contraste com o fundo da mesa, um aviso recomendará a aplicação de marcadores manuais.
+
+## **4\. Processamento em Lote e Exportação**
+
+Ao finalizar a sessão de captura, o operador deve pressionar `F12` (Exportar) para que o *Worker Assíncrono* processe o projeto massivamente. No processador em lote, o recorte automático tem uma relação forte com as ferramentas geométricas de correção de perspectiva e *Deskew*.
+
+**O Fluxo de Retificação e Auto Crop Pós-Deskew:**
+
+* Se o documento precisar de alinhamento físico, a rotina intercepta a imagem e processa a função matemática.  
+* A rotina lê os metadados de preferência definidos na aba de configurações.  
+* Uma binarização de `Otsu` é aliada ao modo de inversão e à dilatação matricial para extrair contornos fechados.  
+* As caixas contornadas válidas ganham uma margem segura de *Padding*, calculada sobre a largura e altura detectadas de forma a nunca ultrapassar os limites da matriz original.  
+* Os resultados são ordenados, privilegiando o maior retângulo útil.  
+* Por fim, a matriz gráfica é fisicamente truncada (recortada) seguindo as coordenadas exatas calculadas.  
+* Em cumprimento aos padrões arquivísticos rigorosos e à cadeia de custódia, todo esse processo destrutivo é perfeitamente trilhado: um evento informando **"Auto Crop Pós-Deskew"** é inserido na auditoria (padrão PREMIS) e incluído como manifesto permanente no arquivo do pacote.

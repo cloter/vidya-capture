@@ -559,6 +559,7 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         
         new_clip.add_clip_callback = self._add_new_clip
         new_clip.remove_clip_callback = self._remove_clip
+        new_clip.make_main_callback = self._make_clip_main  # <--- INSERIR
         new_clip.duplicate_callback = self._duplicate_clip
         new_clip.toggle_ratio_callback = self._toggle_keep_ratio
         new_clip.resize_percent_callback = self._resize_crop_percent
@@ -1023,6 +1024,7 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
                             new_clip.is_child_clip = True
                             new_clip.add_clip_callback = self._add_new_clip
                             new_clip.remove_clip_callback = self._remove_clip
+                            new_clip.make_main_callback = self._make_clip_main  # <--- INSERIR
                             
                             new_clip.duplicate_callback = self._duplicate_clip
                             new_clip.toggle_ratio_callback = self._toggle_keep_ratio
@@ -1989,6 +1991,7 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         new_clip.add_clip_callback = self._add_new_clip
         
         new_clip.remove_clip_callback = self._remove_clip
+        new_clip.make_main_callback = self._make_clip_main  # <--- INSERIR
         new_clip.duplicate_callback = self._duplicate_clip 
         new_clip.toggle_ratio_callback = self._toggle_keep_ratio
         new_clip.resize_percent_callback = self._resize_crop_percent
@@ -2028,6 +2031,7 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         new_clip.add_clip_callback = self._add_new_clip
         
         new_clip.remove_clip_callback = self._remove_clip
+        new_clip.make_main_callback = self._make_clip_main  # <--- INSERIR
         new_clip.duplicate_callback = self._duplicate_clip
         new_clip.toggle_ratio_callback = self._toggle_keep_ratio
         new_clip.resize_percent_callback = self._resize_crop_percent
@@ -2063,6 +2067,25 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
             self.active_clips.remove(clip_marker)
             self._save_review_crop_if_needed()
 
+    def _make_clip_main(self, clip_marker):
+        """Troca a geometria do clipe secundário selecionado com o quadro principal."""
+        if not self.is_single_mode: return
+        
+        # 1. Tira uma foto do estado atual para permitir Ctrl+Z (Undo)
+        self._save_undo_snapshot(self.marker_left)
+        
+        # 2. Resgata as geometrias matemáticas
+        clip_geom = clip_marker.get_geometry()
+        main_geom = self.marker_left.get_geometry()
+        
+        # 3. Faz a inversão física na tela
+        self.marker_left.set_geometry(clip_geom)
+        clip_marker.set_geometry(main_geom)
+        
+        # 4. Salva no disco (HD) as novas posições
+        self._save_review_crop_if_needed()
+        logger.info("Quadro secundário promovido a principal com sucesso.")
+        
     def _save_clips_to_disk(self, base_image_path):
         if not base_image_path or not os.path.exists(base_image_path): return
         

@@ -60,6 +60,7 @@ class VidyaCropMarker(QtWidgets.QGraphicsPolygonItem):
         self.is_child_clip = False
         self.add_clip_callback = None
         self.remove_clip_callback = None
+        self.make_main_callback = None  # <--- ADICIONE ESTA LINHA
         
         self.duplicate_callback = None  # <--- ADICIONE ESTA LINHA AQUI
         self.save_undo_state_callback = None # <--- ADICIONE ESTA LINHA
@@ -323,6 +324,7 @@ class VidyaCropMarker(QtWidgets.QGraphicsPolygonItem):
             
         action_duplicate = None # Declara para não dar UnboundLocalError
         action_reset_all = None # <--- DECLARAÇÃO DA AÇÃO
+        action_make_main = None # <--- ADICIONE ESTA LINHA AQUI
         
         if getattr(self, 'is_single_mode', False):
             menu.addSeparator()
@@ -341,6 +343,11 @@ class VidyaCropMarker(QtWidgets.QGraphicsPolygonItem):
             action_duplicate.setIcon(QtGui.QIcon.fromTheme("edit-copy"))
             
             if getattr(self, 'is_child_clip', False):
+                # ---> INÍCIO DA INSERÇÃO DO NOVO ITEM <---
+                action_make_main = menu.addAction("Tornar este o quadro principal")
+                action_make_main.setIcon(QtGui.QIcon.fromTheme("go-up"))
+                # ---> FIM DA INSERÇÃO <---
+                
                 action_remove_clip = menu.addAction(texto_remover)
                 action_remove_clip.setIcon(QtGui.QIcon.fromTheme("list-remove"))
                 
@@ -390,6 +397,10 @@ class VidyaCropMarker(QtWidgets.QGraphicsPolygonItem):
                 self.duplicate_callback(self)
             elif selected_action == action_remove_clip and self.remove_clip_callback:
                 self.remove_clip_callback(self)
+            # ---> INÍCIO DA INSERÇÃO DO GATILHO <---
+            elif action_make_main and selected_action == action_make_main and self.make_main_callback:
+                self.make_main_callback(self)
+            # ---> FIM DA INSERÇÃO <---
             elif action_reset_all and selected_action == action_reset_all and self.reset_all_clips_callback:
                 self.reset_all_clips_callback(self)
             elif action_bring_front and selected_action == action_bring_front:
