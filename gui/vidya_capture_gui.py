@@ -890,11 +890,26 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         if hasattr(self, 'view_left') and (source is self.view_left.viewport() or source is self.view_right.viewport()):
             if event.type() == QtCore.QEvent.Wheel:
                 if event.modifiers() == QtCore.Qt.ControlModifier:
-                    if event.angleDelta().y() > 0:
-                        self._on_zoom_in_clicked()
-                    else:
-                        self._on_zoom_out_clicked()
-                    return True 
+                    
+                    # 1. Define o fator de escala (aumentar ou diminuir)
+                    factor = 1.1 if event.angleDelta().y() > 0 else 0.9
+                    self.zoom_factor *= factor # Mantém a variável global sincronizada
+                    
+                    # 2. Descobre em qual das views o ponteiro do mouse está
+                    active_view = self.view_left if source is self.view_left.viewport() else self.view_right
+                    other_view = self.view_right if active_view == self.view_left else self.view_left
+                    
+                    # 3. Aplica o zoom na view ativa centralizando exatamente no ponteiro do mouse
+                    active_view.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+                    active_view.scale(factor, factor)
+                    
+                    # 4. Aplica o zoom na view espelho (para que cresçam juntas), 
+                    # mas centraliza no meio, já que o mouse não está sobre ela
+                    other_view.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
+                    other_view.scale(factor, factor)
+                    
+                    self._rebalance_splitter()
+                    return True
                     
             elif event.type() == QtCore.QEvent.MouseButtonPress:
                 if event.button() == QtCore.Qt.MiddleButton:

@@ -160,7 +160,78 @@ class VidyaImageProcessor(QtCore.QThread):
             ext = ".tiff"
             
         return ext, params
-        
+
+    def _post_deskew_crop(self, img):
+        """
+        Aplica um corte automático (Bounding Box) na imagem após o alinhamento de contorno.
+        Replica a lógica matemática e os parâmetros configuráveis da classe VidyaCropsAuto.
+        """
+        try:
+            h, w = img.shape[:2]
+            img_area = h * w
+            
+            # Carrega os parâmetros usando a mesma base da VidyaCropsAuto
+            blur_val = self.settings.get("ac_blur", 11)
+            dilate_val = self.settings.get("ac_dilate", 2)
+            pad_val = self.settings.get("ac_pad", 3) / 100.0
+            min_area_val = self.settings.get("ac_min_area", 1.5) / 100.0
+            invert_mode = self.settings.get("ac_invert", "Automático")
+            
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Desfoque paramétrico
+            b_size = blur_val if blur_val % 2 != 0 else blur_val + 1
+            blurred = cv2.GaussianBlur(gray, (b_size, b_size), 0)
+            
+            # Binarização de Otsu
+            _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Lógica Direcionada de Contraste
+            if invert_mode == "Forçar Fundo Branco":
+                thresh = cv2.bitwise_not(thresh)
+            elif invert_mode == "Automático":
+                border_pixels = np.concatenate([thresh[0, :], thresh[-1, :], thresh[:, 0], thresh[:, -1]])
+                if np.mean(border_pixels) > 127:
+                    thresh = cv2.bitwise_not(thresh)
+            
+            # Dilatação Morfológica Paramétrica
+            if dilate_val > 0:
+                kernel = np.ones((5, 5), np.uint8)
+                thresh = cv2.dilate(thresh, kernel, iterations=dilate_val)
+            
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            valid_rects = []
+            for c in contours:
+                area = cv2.contourArea(c)
+                # Verifica se o contorno está dentro dos limites de proporção
+                if img_area * min_area_val < area < img_area * 0.95:
+                    cx, cy, cw, ch = cv2.boundingRect(c)
+                    
+                    # Padding automático respeitando as bordas da matriz
+                    pad_x, pad_y = int(cw * pad_val), int(ch * pad_val)
+                    nx = max(0, cx - pad_x)
+                    ny = max(0, cy - pad_y)
+                    nw = min(w - nx, cw + 2 * pad_x)
+                    nh = min(h - ny, ch + 2 * pad_y)
+                    
+                    valid_rects.append((nx, ny, nw, nh))
+            
+            if not valid_rects:
+                return img, False
+                
+            # Ordena e seleciona o maior recorte possível para garantir a folha inteira
+            valid_rects.sort(key=lambda r: r[2]*r[3], reverse=True)
+            nx, ny, nw, nh = valid_rects[0]
+            
+            # Aplica o corte físico na imagem
+            cropped_img = img[ny:ny+nh, nx:nx+nw]
+            return cropped_img, True
+            
+        except Exception as e:
+            logger.error(f"Falha na tentativa de corte pós-deskew: {e}")
+            return img, False
+                    
     def run(self):
         try:
             # ---> INÍCIO DA PURGA PREVENTIVA DA PASTA 'out' <---
@@ -282,66 +353,26 @@ class VidyaImageProcessor(QtCore.QThread):
                                 img = img[y:y+h, x:x+w]
                                 applied_transforms.append("Crop Geométrico (Retangular)")
                                 
-                                # Passo 2: Máscara Poligonal Vetorial (Isolamento de Fundo)
-                                bg_detect = self.settings.get("bg_detect_enabled", False)
-                                polygon_data = geom.get("polygon", [])
-                                
-                                if bg_detect and polygon_data and len(polygon_data) > 2:
-                                    fill_pref = self.settings.get("bg_replace_color", "Branco")
-                                    
-                                    # Extrai os pontos absolutos mapeados pelo JSON
-                                    pts = np.array([[int(p["x"]), int(p["y"])] for p in polygon_data], dtype=np.int32)
-                                    
-                                    # CORREÇÃO GEOMÉTRICA CRÍTICA: Transladar as coordenadas do polígono 
-                                    # subtraindo as âncoras X e Y do crop retangular (bounding box) que acabou de ocorrer.
-                                    pts = pts - [x, y]
-                                    
-                                    mask = np.zeros(img.shape[:2], dtype=np.uint8)
-                                    cv2.fillPoly(mask, [pts], 255)
-                                    
-                                    if fill_pref == "Transparente":
-                                        img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
-                                        img[mask == 0] = (0, 0, 0, 0)
-                                    elif fill_pref == "Branco":
-                                        img[mask == 0] = (255, 255, 255)
-                                    elif fill_pref == "Preto":
-                                        img[mask == 0] = (0, 0, 0)
-                                    elif fill_pref == "Cinza":
-                                        img[mask == 0] = (128, 128, 128)
-                                    elif fill_pref.startswith("#"):
-                                        # Suporte à geração HexArgb (#AARRGGBB) do seu Color Dialog do QT
-                                        if len(fill_pref) == 9: 
-                                            try:
-                                                a = int(fill_pref[1:3], 16)
-                                                r = int(fill_pref[3:5], 16)
-                                                g = int(fill_pref[5:7], 16)
-                                                b = int(fill_pref[7:9], 16)
-                                                
-                                                if img.shape[2] != 4:
-                                                    img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
-                                                img[mask == 0] = (b, g, r, a)
-                                            except ValueError:
-                                                img[mask == 0] = (255, 255, 255) # Fallback branco de segurança
-                                                
-                                        # Suporte ao Hex Padrão (#RRGGBB)
-                                        elif len(fill_pref) == 7: 
-                                            try:
-                                                r = int(fill_pref[1:3], 16)
-                                                g = int(fill_pref[3:5], 16)
-                                                b = int(fill_pref[5:7], 16)
-                                                
-                                                if img.shape[2] == 4:
-                                                    img[mask == 0] = (b, g, r, 255)
-                                                else:
-                                                    img[mask == 0] = (b, g, r)
-                                            except ValueError:
-                                                img[mask == 0] = (255, 255, 255)
-                                    else:
-                                        img[mask == 0] = (255, 255, 255) # Fallback padrão se der erro de string
-                                        
-                                    applied_transforms.append(f"Isolamento Vetorial de Fundo (Cor: {fill_pref})")
                     except Exception as e: logger.error(f"Erro no Crop em {base_name}: {e}")
                     # ---> FIM DA INSERÇÃO <---
+                    
+                # ---> INÍCIO DA INSERÇÃO: DESKEW DE CONTORNO (NOVO) <---
+                if self.flags.get("contour_deskew"):
+                    try:
+                        from core.vidya_contour_deskew import VidyaContourDeskewer
+                        contour_deskewer = VidyaContourDeskewer()
+                        img, final_angle, changed = contour_deskewer.deskew(img)
+                        if changed: 
+                            applied_transforms.append(f"Alinhamento Físico por Contorno (Girado em {final_angle:.2f}°)")
+                            
+                            # Aciona o Crop local usando os mesmos parâmetros do VidyaCropsAuto
+                            img, cropped_ok = self._post_deskew_crop(img)
+                            if cropped_ok:
+                                applied_transforms.append("Auto Crop Pós-Deskew")
+                                
+                    except Exception as e:
+                        logger.error(f"Erro na execução do Deskew de Contorno em {base_name}: {e}")
+                # ---> FIM DA INSERÇÃO <---
 
                 if self.flags.get("deskew"):
                     try:
@@ -716,7 +747,78 @@ class VidyaSingleProcessor(QtCore.QThread):
             params = [int(cv2.IMWRITE_TIFF_COMPRESSION), val]
             ext = ".tiff"
         return ext, params
-        
+
+    def _post_deskew_crop(self, img):
+        """
+        Aplica um corte automático (Bounding Box) na imagem após o alinhamento de contorno.
+        Replica a lógica matemática e os parâmetros configuráveis da classe VidyaCropsAuto.
+        """
+        try:
+            h, w = img.shape[:2]
+            img_area = h * w
+            
+            # Carrega os parâmetros usando a mesma base da VidyaCropsAuto
+            blur_val = self.settings.get("ac_blur", 11)
+            dilate_val = self.settings.get("ac_dilate", 2)
+            pad_val = self.settings.get("ac_pad", 3) / 100.0
+            min_area_val = self.settings.get("ac_min_area", 1.5) / 100.0
+            invert_mode = self.settings.get("ac_invert", "Automático")
+            
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Desfoque paramétrico
+            b_size = blur_val if blur_val % 2 != 0 else blur_val + 1
+            blurred = cv2.GaussianBlur(gray, (b_size, b_size), 0)
+            
+            # Binarização de Otsu
+            _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Lógica Direcionada de Contraste
+            if invert_mode == "Forçar Fundo Branco":
+                thresh = cv2.bitwise_not(thresh)
+            elif invert_mode == "Automático":
+                border_pixels = np.concatenate([thresh[0, :], thresh[-1, :], thresh[:, 0], thresh[:, -1]])
+                if np.mean(border_pixels) > 127:
+                    thresh = cv2.bitwise_not(thresh)
+            
+            # Dilatação Morfológica Paramétrica
+            if dilate_val > 0:
+                kernel = np.ones((5, 5), np.uint8)
+                thresh = cv2.dilate(thresh, kernel, iterations=dilate_val)
+            
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            valid_rects = []
+            for c in contours:
+                area = cv2.contourArea(c)
+                # Verifica se o contorno está dentro dos limites de proporção
+                if img_area * min_area_val < area < img_area * 0.95:
+                    cx, cy, cw, ch = cv2.boundingRect(c)
+                    
+                    # Padding automático respeitando as bordas da matriz
+                    pad_x, pad_y = int(cw * pad_val), int(ch * pad_val)
+                    nx = max(0, cx - pad_x)
+                    ny = max(0, cy - pad_y)
+                    nw = min(w - nx, cw + 2 * pad_x)
+                    nh = min(h - ny, ch + 2 * pad_y)
+                    
+                    valid_rects.append((nx, ny, nw, nh))
+            
+            if not valid_rects:
+                return img, False
+                
+            # Ordena e seleciona o maior recorte possível para garantir a folha inteira
+            valid_rects.sort(key=lambda r: r[2]*r[3], reverse=True)
+            nx, ny, nw, nh = valid_rects[0]
+            
+            # Aplica o corte físico na imagem
+            cropped_img = img[ny:ny+nh, nx:nx+nw]
+            return cropped_img, True
+            
+        except Exception as e:
+            logger.error(f"Falha na tentativa de corte pós-deskew: {e}")
+            return img, False
+                    
     def run(self):
         try:
             # ---> INÍCIO DA PURGA PREVENTIVA DA PASTA 'out' <---
@@ -845,42 +947,26 @@ class VidyaSingleProcessor(QtCore.QThread):
                                 w = min(w, img.shape[1] - x); h = min(h, img.shape[0] - y)
                                 img = img[y:y+h, x:x+w]
                                 applied_transforms.append("Crop Geométrico (Retangular)")
-                                
-                                # Passo 2: Máscara Poligonal Vetorial
-                                polygon_data = geom.get("polygon", [])
-                                if polygon_data and len(polygon_data) > 2:
-                                    fill_pref = self.settings.get("marker_fill_color", "Transparente")
-                                    
-                                    pts = np.array([[int(p["x"]), int(p["y"])] for p in polygon_data], dtype=np.int32)
-                                    mask = np.zeros(img.shape[:2], dtype=np.uint8)
-                                    cv2.fillPoly(mask, [pts], 255)
-                                    
-                                    if fill_pref == "Transparente":
-                                        img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
-                                        img[mask == 0] = (0, 0, 0, 0)
-                                    elif fill_pref == "Branco":
-                                        img[mask == 0] = (255, 255, 255)
-                                    elif fill_pref == "Preto":
-                                        img[mask == 0] = (0, 0, 0)
-                                    elif fill_pref.startswith("#") and len(fill_pref) == 7:
-                                        try:
-                                            r = int(fill_pref[1:3], 16)
-                                            g = int(fill_pref[3:5], 16)
-                                            b = int(fill_pref[5:7], 16)
-                                            
-                                            if img.shape[2] == 4:
-                                                img[mask == 0] = (b, g, r, 255)
-                                            else:
-                                                img[mask == 0] = (b, g, r)
-                                        except ValueError:
-                                            img[mask == 0] = (0, 0, 0)
-                                    else:
-                                        img[mask == 0] = (0, 0, 0)
-                                        
-                                    applied_transforms.append(f"Crop Poligonal Dinâmico (Fundo: {fill_pref})")
 
-                                if is_clip: applied_transforms.append("Recorte de Múltiplos Quadros")
-                    except Exception as e: logger.error(f"Erro no Crop: {e}")
+                    except Exception as e: logger.error(f"Erro no Crop: {e}")                    
+                    
+                # ---> INÍCIO DA INSERÇÃO: DESKEW DE CONTORNO (NOVO) <---
+                if self.flags.get("contour_deskew"):
+                    try:
+                        from core.vidya_contour_deskew import VidyaContourDeskewer
+                        contour_deskewer = VidyaContourDeskewer()
+                        img, final_angle, changed = contour_deskewer.deskew(img)
+                        if changed: 
+                            applied_transforms.append(f"Alinhamento Físico por Contorno (Girado em {final_angle:.2f}°)")
+                            
+                            # Aciona o Crop local usando os mesmos parâmetros do VidyaCropsAuto
+                            img, cropped_ok = self._post_deskew_crop(img)
+                            if cropped_ok:
+                                applied_transforms.append("Auto Crop Pós-Deskew")
+                                
+                    except Exception as e:
+                        logger.error(f"Erro na execução do Deskew de Contorno em {base_name}: {e}")
+                # ---> FIM DA INSERÇÃO <---
 
                 if self.flags.get("deskew"):
                     try:

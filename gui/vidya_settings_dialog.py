@@ -1031,10 +1031,10 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.chk_crop = QtWidgets.QCheckBox("Cortar (Crop)")
         self.chk_crop.setChecked(self.settings.get("proc_crop", True))
         
-        self.chk_deskew = QtWidgets.QCheckBox("Alinhamento (Deskew OpenCV)")
+        self.chk_deskew = QtWidgets.QCheckBox("Alinhamento de Imagens com Texto")
         self.chk_deskew.setChecked(self.settings.get("proc_deskew", True))
         
-        self.chk_dewarp = QtWidgets.QCheckBox("Planificação Geométrica (Dewarp)")
+        self.chk_dewarp = QtWidgets.QCheckBox("Planificação Geométrica")
         self.chk_dewarp.setChecked(self.settings.get("proc_dewarp", False))
         
         self.chk_pdf = QtWidgets.QCheckBox("Produzir PDF Unificado no Final")
@@ -1098,6 +1098,13 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
         lyt_geom.addLayout(grid_geom)
         # ---> FIM DA CORREÇÃO <---
+        
+        # ---> INSERIR AQUI: Novo checkbox para o Deskew de Contorno <---
+        self.chk_contour_deskew = QtWidgets.QCheckBox("Alinhamento Horizontal de Imagens/Fotos")
+        self.chk_contour_deskew.setChecked(self.settings.get("proc_contour_deskew", False))
+        self.chk_contour_deskew.setToolTip("Alinha a imagem baseando-se no contorno estrutural externo (borda do objeto/papel).")
+        lyt_geom.addWidget(self.chk_contour_deskew)
+        # ---> FIM DA INSERÇÃO <---
 
         lyt_geom.addWidget(self.chk_pdf)
         
@@ -1416,6 +1423,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.chk_crop.setChecked(True)
         self.chk_deskew.setChecked(True)
         self.chk_dewarp.setChecked(True)
+        self.chk_contour_deskew.setChecked(False)
         self.chk_pdf.setChecked(True)
         self.chk_ignore_ends.setChecked(False)
         self.rb_originais.setChecked(True)
@@ -1906,6 +1914,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.settings["proc_crop"] = self.chk_crop.isChecked()
         self.settings["proc_deskew"] = self.chk_deskew.isChecked()
         self.settings["proc_dewarp"] = self.chk_dewarp.isChecked()
+        self.settings["proc_contour_deskew"] = self.chk_contour_deskew.isChecked()
         self.settings["proc_pdf"] = self.chk_pdf.isChecked()
         self.settings["ignore_ends"] = self.chk_ignore_ends.isChecked() 
 

@@ -27,8 +27,15 @@ class VidyaProcessDialog(QtWidgets.QDialog):
         self.chk_crop = QtWidgets.QCheckBox("Cortar (Crop)")
         self.chk_crop.setChecked(self.settings.get("proc_crop", True))
         
-        self.chk_deskew = QtWidgets.QCheckBox("Alinhamento (Deskew OpenCV)")
+        # ---> INSERIR AQUI: Novo checkbox de contorno <---
+        self.chk_contour_deskew = QtWidgets.QCheckBox("Alinhamento Físico (Deskew de Contorno/Fotos)")
+        self.chk_contour_deskew.setChecked(self.settings.get("proc_contour_deskew", False))
+        self.chk_contour_deskew.setToolTip("Alinha a imagem baseando-se no contorno do papel. Ideal para fotos ou documentos sem texto.")
+        
+        # ---> ALTERAR AQUI: Deixar o deskew de texto mais explicativo <---
+        self.chk_deskew = QtWidgets.QCheckBox("Alinhamento de Conteúdo (Deskew de Texto)")
         self.chk_deskew.setChecked(self.settings.get("proc_deskew", True))
+        self.chk_deskew.setToolTip("Alinha baseado na inclinação das linhas de texto.")
         
         self.chk_dewarp = QtWidgets.QCheckBox("Planificação geométrica (Dewarp)")
         self.chk_dewarp.setChecked(self.settings.get("proc_dewarp", False))
@@ -37,6 +44,7 @@ class VidyaProcessDialog(QtWidgets.QDialog):
         self.chk_ocr.setChecked(self.settings.get("proc_ocr", False))
         
         lyt_img.addWidget(self.chk_crop)
+        lyt_img.addWidget(self.chk_contour_deskew)
         lyt_img.addWidget(self.chk_deskew)
         lyt_img.addWidget(self.chk_dewarp)
         lyt_img.addWidget(self.chk_ocr)
@@ -79,6 +87,7 @@ class VidyaProcessDialog(QtWidgets.QDialog):
         """
         return {
             "crop": self.chk_crop.isChecked(),
+            "contour_deskew": self.chk_contour_deskew.isChecked(), # ---> INSERIDO AQUI
             "deskew": self.chk_deskew.isChecked(),
             "dewarp": self.chk_dewarp.isChecked(),
             "pdf": self.chk_pdf.isChecked(),

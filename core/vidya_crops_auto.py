@@ -135,7 +135,7 @@ class VidyaCropsAuto:
                         main_data = json.load(f)
                 
                 main_data["crop_geometry"] = {
-                    "x": main_rect[0], "y": main_rect[1],
+                    "x": main_rect[0], "ycalsse ": main_rect[1],
                     "width": main_rect[2], "height": main_rect[3], 
                     "polygon": main_rect[4] # <- O array preenchido ou vazio
                 }
