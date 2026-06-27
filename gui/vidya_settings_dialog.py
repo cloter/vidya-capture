@@ -98,13 +98,13 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self._build_project_tab()
         self._build_source_tab()    
         self._build_preview_tab()
-        self._build_markers_tab()
         self._build_images_tab()
-        self._build_process_tab()
+        self._build_markers_tab()
         self._build_ocr_tab()
-        self._build_custody_tab()
-        # ---> INSERIR AQUI: Construtor da aba do Optuna
         self._build_optuna_tab()
+        self._build_custody_tab()
+        self._build_process_tab()
+        # ---> INSERIR AQUI: Construtor da aba do Optuna
         
 
         btn_layout = QtWidgets.QHBoxLayout()
