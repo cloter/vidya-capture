@@ -189,6 +189,33 @@ class VidyaOptunaTuner(QtCore.QThread):
         block_size = trial.suggest_int("ocr_block_size", 11, 51, step=2)
         c_val = trial.suggest_int("ocr_c_val", 2, 25)
         
+        # Recupera a string de idiomas, que pode conter o caractere '+' (ex: "por+eng")
+        lang_code = self.settings.get("ocr_lang", "por")
+        
+        # Separa os idiomas para validação física dos arquivos
+        langs_to_check = lang_code.split('+')
+        
+        # Mapeamento de caminhos comuns no Linux Mint / Ubuntu
+        tess_paths = [
+            "/usr/share/tesseract-ocr/5/tessdata/",    # Tesseract 5 (Mint 21+)
+            "/usr/share/tesseract-ocr/4.00/tessdata/", # Tesseract 4 (Mint 20)
+            "/usr/share/tessdata/",
+            "/usr/local/share/tessdata/"
+        ]
+        
+        valid_tessdata = None
+        for p in tess_paths:
+            # Verifica se TODOS os arquivos .traineddata requisitados existem neste diretório
+            all_exist = all(os.path.exists(os.path.join(p, f"{lang}.traineddata")) for lang in langs_to_check)
+            if all_exist:
+                valid_tessdata = p
+                break
+                
+        if not valid_tessdata:
+            missing_files = [f"{lang}.traineddata" for lang in langs_to_check]
+            logger.error(f"Abortando trial: pacote(s) {missing_files} não encontrados simultaneamente nos diretórios padrão.")
+            return 0.0
+        
         total_confidence = 0.0
         valid_samples = 0
         
@@ -208,8 +235,8 @@ class VidyaOptunaTuner(QtCore.QThread):
                 # 2. Converte a matriz OpenCV (NumPy) para Imagem PIL (Exigência da API C++)
                 pil_img = Image.fromarray(bin_img)
                 
-                # 3. Interage diretamente com a Memória C++ do Tesseract
-                with tesserocr.PyTessBaseAPI(lang=self.settings.get("ocr_lang", "por")) as api:
+                # 3. Interage diretamente com a Memória C++ passando o 'path' e a string original 'lang_code' (ex: "por+eng")
+                with tesserocr.PyTessBaseAPI(path=valid_tessdata, lang=lang_code) as api:
                     api.SetImage(pil_img)
                     api.Recognize() # Executa a leitura
                     
@@ -217,7 +244,7 @@ class VidyaOptunaTuner(QtCore.QThread):
                     confidences = api.AllWordConfidences() 
                     
                     if confidences:
-                        # Opcional: Remover zeros absolutos que geralmente representam lixo/manchas
+                        # Remover zeros absolutos que geralmente representam lixo/manchas
                         valid_confs = [c for c in confidences if c > 0]
                         if valid_confs:
                             avg_conf = sum(valid_confs) / len(valid_confs)

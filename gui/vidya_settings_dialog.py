@@ -702,11 +702,12 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
     def _on_ac_preset_changed(self, preset_name):
         presets = {
-            "Padrão de Fábrica": [11, 2, 3, 15, "Automático"],
-            "Fundo um Pouco Escuro": [7, 0, 2, 10, "Forçar Fundo Preto"],
-            "Fundo Muito Escuro": [25, 6, 5, 30, "Forçar Fundo Preto"],
-            "Fundo um Pouco Claro": [7, 0, 1, 5, "Forçar Fundo Branco"],
-            "Fundo Muito Claro": [25, 5, 4, 25, "Forçar Fundo Branco"]
+            # Formato: [blur, dilate, pad, min_area, invert_mode]
+            "Padrão de Fábrica":     [11, 2, 3, 15, "Automático"],
+            "Fundo um Pouco Escuro": [9,  1, 2, 10, "Forçar Fundo Preto"],
+            "Fundo Muito Escuro":    [21, 4, 4, 25, "Forçar Fundo Preto"],
+            "Fundo um Pouco Claro":  [9,  1, 2, 10, "Forçar Fundo Branco"],
+            "Fundo Muito Claro":     [25, 5, 3, 20, "Forçar Fundo Branco"]
         }
         
         if preset_name in presets:
@@ -1411,6 +1412,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
     def _reset_ocr_defaults(self):
         self.chk_proc_ocr.setChecked(False)
         self.chk_ocr_preprocess.setChecked(True)
+        self.chk_manual_opencv.setChecked(False) # <--- INSERIR AQUI
         self.slider_cor_papel.setValue(20)
         self.slider_int_impr.setValue(80)
         self.slider_tam_manchas.setValue(10)
@@ -1610,6 +1612,47 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_effort.addRow("", lbl_effort_info)
         layout.addWidget(grp_effort)
 
+        # --- GRUPO 4: VALORES CALCULADOS PELA IA (MEMÓRIA ATUAL) ---
+        grp_ai_calc = QtWidgets.QGroupBox("4. Valores Otimizados pela IA (Atuais)")
+        f_ai = grp_ai_calc.font(); f_ai.setBold(True); grp_ai_calc.setFont(f_ai)
+        grp_ai_calc.setStyleSheet("QLabel { font-weight: normal; }")
+        lyt_ai = QtWidgets.QVBoxLayout(grp_ai_calc)
+
+        # Resgata os últimos valores otimizados salvos (ou os padrões de fábrica)
+        val_blur = self.settings.get("ac_blur", 11)
+        val_dilate = self.settings.get("ac_dilate", 2)
+        val_denoise = self.settings.get("ocr_denoise_h", 0.0)
+        val_clahe = self.settings.get("ocr_clahe_clip", 1.0)
+        val_block = self.settings.get("ocr_block_size", 11)
+        val_c = self.settings.get("ocr_c_val", 2)
+
+        # Instanciação das labels contendo Nome: Valor
+        self.lbl_ai_blur = QtWidgets.QLabel(f"Crop-Blur: {val_blur}  ")
+        self.lbl_ai_dilate = QtWidgets.QLabel(f"Crop-Dilate: {val_dilate}  ")
+        self.lbl_ai_denoise = QtWidgets.QLabel(f"Denoise: {val_denoise:.2f}  ")
+        self.lbl_ai_clahe = QtWidgets.QLabel(f"CLAHE: {val_clahe:.2f}  ")
+        self.lbl_ai_block = QtWidgets.QLabel(f"Bloco: {val_block}  ")
+        self.lbl_ai_c = QtWidgets.QLabel(f"Valor C: {val_c}  ")
+
+        # Aplica o mesmo estilo azul monoespaçado da aba OCR
+        calc_style = "color: #2980b9; font-family: monospace; font-weight: bold; font-size: 10pt;"
+        for lbl in [self.lbl_ai_blur, self.lbl_ai_dilate, self.lbl_ai_denoise, self.lbl_ai_clahe, self.lbl_ai_block, self.lbl_ai_c]:
+            lbl.setStyleSheet(calc_style)
+
+        # Alinhamento horizontal garantindo que todos fiquem na mesma linha
+        lyt_ai_row = QtWidgets.QHBoxLayout()
+        lyt_ai_row.setContentsMargins(0, 5, 0, 0)
+        lyt_ai_row.addWidget(self.lbl_ai_blur)
+        lyt_ai_row.addWidget(self.lbl_ai_dilate)
+        lyt_ai_row.addWidget(self.lbl_ai_denoise)
+        lyt_ai_row.addWidget(self.lbl_ai_clahe)
+        lyt_ai_row.addWidget(self.lbl_ai_block)
+        lyt_ai_row.addWidget(self.lbl_ai_c)
+        lyt_ai_row.addStretch() # Empurra os itens para a esquerda, mantendo o espaçamento uniforme
+
+        lyt_ai.addLayout(lyt_ai_row)
+        layout.addWidget(grp_ai_calc)
+        
         # --- BOTÃO DE AÇÃO ---
         btn_layout = QtWidgets.QHBoxLayout()
         self.btn_start_optuna = QtWidgets.QPushButton("  Extrair Amostras e Iniciar Treinamento")
@@ -1729,13 +1772,18 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         # ---> FIM DA ALTERAÇÃO <---        
 
         lbl_style = "font-size: 8pt; color: gray;"
-        lyt_cv2.addRow("", self.chk_ocr_preprocess)
+        lyt_cv2.addRow(self.chk_ocr_preprocess)
         lyt_cv2.addRow(QtWidgets.QLabel("Cor do Papel<br><span style='%s'>Claro (0) → Escuro (100)</span>" % lbl_style), self.slider_cor_papel)
         lyt_cv2.addRow(QtWidgets.QLabel("Intensidade Impressão<br><span style='%s'>Fraca (0) → Forte (100)</span>" % lbl_style), self.slider_int_impr)
         lyt_cv2.addRow(QtWidgets.QLabel("Tamanho Manchas<br><span style='%s'>Pequenas (0) → Grandes (100)</span>" % lbl_style), self.slider_tam_manchas)
         lyt_cv2.addRow(QtWidgets.QLabel("Profundidade Manchas<br><span style='%s'>Superficiais (0) → Densas (100)</span>" % lbl_style), self.slider_prof_manchas)
         
         lyt_cv2.addRow("", wdg_calc_container)
+        
+        # 2. INSERÇÃO: Checkbox de Força Manual totalmente alinhado à esquerda
+        self.chk_manual_opencv = QtWidgets.QCheckBox("Forçar o OpenCV usar estes valores")
+        self.chk_manual_opencv.setChecked(self.settings.get("manual_opencv_configs", False))
+        lyt_cv2.addRow(self.chk_manual_opencv)
         
         self._update_ocr_calculated_params()
         
@@ -1818,7 +1866,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         contrast_clip = min(contrast_clip, 6.0)
 
         # Bloco (block_size)
-        raw_block = int(19 + (extensao * 0.4))
+        raw_block = int(11 + (extensao * 0.4))
         block_size = raw_block + 1 if raw_block % 2 == 0 else raw_block
 
         # Valor C (c_final)
@@ -1930,6 +1978,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
         self.settings["proc_ocr"] = self.chk_proc_ocr.isChecked()
         self.settings["ocr_preprocess"] = self.chk_ocr_preprocess.isChecked()
+        self.settings["manual_opencv_configs"] = self.chk_manual_opencv.isChecked() # <--- INSERIR AQUI
         self.settings["ocr_cor_papel"] = self.slider_cor_papel.value()
         self.settings["ocr_int_impressao"] = self.slider_int_impr.value()
         self.settings["ocr_tam_manchas"] = self.slider_tam_manchas.value()

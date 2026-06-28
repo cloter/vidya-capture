@@ -35,30 +35,35 @@ class VidyaImageProcessor(QtCore.QThread):
         """
         Lê os parâmetros de OCR do projeto (prioridade), depois das configs globais, 
         ou calcula a heurística dos sliders (Fallback).
+        Respeita a flag 'manual_opencv_configs' para ignorar a IA se solicitado.
         """
-        # 1. OPTUNA NO PROJETO: Se a IA calibrou este lote, use a matemática perfeita absoluta
-        proj_optuna = manifest_data.get("optuna_params", {})
-        if "ocr_denoise_h" in proj_optuna:
-            return (
-                float(proj_optuna["ocr_denoise_h"]),
-                float(proj_optuna["ocr_clahe_clip"]),
-                int(proj_optuna["ocr_block_size"]),
-                int(proj_optuna["ocr_c_val"])
-            )
-            
-        # 2. OPTUNA GLOBAL: Se não calibrou o lote, mas tem calibração no sistema (Fallback 1)
-        if "ocr_denoise_h" in self.settings:
-            return (
-                float(self.settings["ocr_denoise_h"]),
-                float(self.settings["ocr_clahe_clip"]),
-                int(self.settings["ocr_block_size"]),
-                int(self.settings["ocr_c_val"])
-            )
-
-        # 3. HEURÍSTICA: Se não tem IA, lê as notas dos Sliders e converte em matriz OpenCV
-        # (Prioriza o Slider salvo no projeto. Se não houver, usa o Slider global do sistema)
         proj_ocr = manifest_data.get("ocr_params", {})
         
+        # 0. Verifica se o usuário forçou o uso dos parâmetros manuais da GUI
+        force_manual = proj_ocr.get("manual_opencv_configs", self.settings.get("manual_opencv_configs", False))
+
+        if not force_manual:
+            # 1. OPTUNA NO PROJETO: Se a IA calibrou este lote, use a matemática perfeita absoluta
+            proj_optuna = manifest_data.get("optuna_params", {})
+            if "ocr_denoise_h" in proj_optuna:
+                return (
+                    float(proj_optuna["ocr_denoise_h"]),
+                    float(proj_optuna["ocr_clahe_clip"]),
+                    int(proj_optuna["ocr_block_size"]),
+                    int(proj_optuna["ocr_c_val"])
+                )
+                
+            # 2. OPTUNA GLOBAL: Se não calibrou o lote, mas tem calibração no sistema (Fallback 1)
+            if "ocr_denoise_h" in self.settings:
+                return (
+                    float(self.settings["ocr_denoise_h"]),
+                    float(self.settings["ocr_clahe_clip"]),
+                    int(self.settings["ocr_block_size"]),
+                    int(self.settings["ocr_c_val"])
+                )
+
+        # 3. HEURÍSTICA / MANUAL: Se forçado, ou se não tem IA, calcula a matriz via Sliders
+        # (Prioriza o Slider salvo no projeto. Se não houver, usa o Slider global do sistema)
         escurecimento = proj_ocr.get("ocr_cor_papel", self.settings.get("ocr_cor_papel", 20))
         intensidade = proj_ocr.get("ocr_int_impressao", self.settings.get("ocr_int_impressao", 80))
         extensao = proj_ocr.get("ocr_tam_manchas", self.settings.get("ocr_tam_manchas", 10))
@@ -627,30 +632,35 @@ class VidyaSingleProcessor(QtCore.QThread):
         """
         Lê os parâmetros de OCR do projeto (prioridade), depois das configs globais, 
         ou calcula a heurística dos sliders (Fallback).
+        Respeita a flag 'manual_opencv_configs' para ignorar a IA se solicitado.
         """
-        # 1. OPTUNA NO PROJETO: Se a IA calibrou este lote, use a matemática perfeita absoluta
-        proj_optuna = manifest_data.get("optuna_params", {})
-        if "ocr_denoise_h" in proj_optuna:
-            return (
-                float(proj_optuna["ocr_denoise_h"]),
-                float(proj_optuna["ocr_clahe_clip"]),
-                int(proj_optuna["ocr_block_size"]),
-                int(proj_optuna["ocr_c_val"])
-            )
-            
-        # 2. OPTUNA GLOBAL: Se não calibrou o lote, mas tem calibração no sistema (Fallback 1)
-        if "ocr_denoise_h" in self.settings:
-            return (
-                float(self.settings["ocr_denoise_h"]),
-                float(self.settings["ocr_clahe_clip"]),
-                int(self.settings["ocr_block_size"]),
-                int(self.settings["ocr_c_val"])
-            )
-
-        # 3. HEURÍSTICA: Se não tem IA, lê as notas dos Sliders e converte em matriz OpenCV
-        # (Prioriza o Slider salvo no projeto. Se não houver, usa o Slider global do sistema)
         proj_ocr = manifest_data.get("ocr_params", {})
         
+        # 0. Verifica se o usuário forçou o uso dos parâmetros manuais da GUI
+        force_manual = proj_ocr.get("manual_opencv_configs", self.settings.get("manual_opencv_configs", False))
+
+        if not force_manual:
+            # 1. OPTUNA NO PROJETO: Se a IA calibrou este lote, use a matemática perfeita absoluta
+            proj_optuna = manifest_data.get("optuna_params", {})
+            if "ocr_denoise_h" in proj_optuna:
+                return (
+                    float(proj_optuna["ocr_denoise_h"]),
+                    float(proj_optuna["ocr_clahe_clip"]),
+                    int(proj_optuna["ocr_block_size"]),
+                    int(proj_optuna["ocr_c_val"])
+                )
+                
+            # 2. OPTUNA GLOBAL: Se não calibrou o lote, mas tem calibração no sistema (Fallback 1)
+            if "ocr_denoise_h" in self.settings:
+                return (
+                    float(self.settings["ocr_denoise_h"]),
+                    float(self.settings["ocr_clahe_clip"]),
+                    int(self.settings["ocr_block_size"]),
+                    int(self.settings["ocr_c_val"])
+                )
+
+        # 3. HEURÍSTICA / MANUAL: Se forçado, ou se não tem IA, calcula a matriz via Sliders
+        # (Prioriza o Slider salvo no projeto. Se não houver, usa o Slider global do sistema)
         escurecimento = proj_ocr.get("ocr_cor_papel", self.settings.get("ocr_cor_papel", 20))
         intensidade = proj_ocr.get("ocr_int_impressao", self.settings.get("ocr_int_impressao", 80))
         extensao = proj_ocr.get("ocr_tam_manchas", self.settings.get("ocr_tam_manchas", 10))
