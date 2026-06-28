@@ -450,15 +450,25 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.slider_ac_blur = create_ac_slider(3, 31, self.settings.get("ac_blur", 11))
         self.slider_ac_blur.setSingleStep(2)
         self.slider_ac_dilate = create_ac_slider(0, 10, self.settings.get("ac_dilate", 2))
-        self.slider_ac_pad = create_ac_slider(0, 15, self.settings.get("ac_pad", 3))
         
-        val_area = int(float(self.settings.get("ac_min_area", 1.5)) * 10)
-        self.slider_ac_area = create_ac_slider(1, 100, val_area) 
+        # Escala multiplicada por 100 (1500 = 15.00%)
+        val_pad = int(float(self.settings.get("ac_pad", 3.0)) * 100)
+        self.slider_ac_pad = create_ac_slider(0, 1500, val_pad) 
+        self.slider_ac_pad.setSingleStep(25)
+        self.slider_ac_pad.setPageStep(100)
+        self.slider_ac_pad.setTickInterval(100)
+        
+        # Escala multiplicada por 100 (1000 = 10.00%)
+        val_area = int(float(self.settings.get("ac_min_area", 1.5)) * 100)
+        self.slider_ac_area = create_ac_slider(25, 1000, val_area) 
+        self.slider_ac_area.setSingleStep(25)
+        self.slider_ac_area.setPageStep(100)
+        self.slider_ac_area.setTickInterval(100)
 
         self.lbl_ac_blur = QtWidgets.QLabel(str(self.slider_ac_blur.value()))
         self.lbl_ac_dilate = QtWidgets.QLabel(str(self.slider_ac_dilate.value()))
-        self.lbl_ac_pad = QtWidgets.QLabel(f"{self.slider_ac_pad.value()}%")
-        self.lbl_ac_area = QtWidgets.QLabel(f"{self.slider_ac_area.value() / 10.0}%")
+        self.lbl_ac_pad = QtWidgets.QLabel(f"{self.slider_ac_pad.value() / 100.0:.2f}%")
+        self.lbl_ac_area = QtWidgets.QLabel(f"{self.slider_ac_area.value() / 100.0:.2f}%")
 
         self.combo_ac_invert = QtWidgets.QComboBox()
         self.combo_ac_invert.addItems(["Automático", "Forçar Fundo Preto", "Forçar Fundo Branco"])
@@ -486,18 +496,34 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
 
         self.images_form_layout.addRow(grp_autocrop)
         
+        # Funções para forçar o slider a travar sempre em múltiplos de 25 (0.25%) 
+        def snap_and_update_pad(v):
+            snapped = round(v / 25.0) * 25
+            if snapped != v:
+                self.slider_ac_pad.blockSignals(True)
+                self.slider_ac_pad.setValue(snapped)
+                self.slider_ac_pad.blockSignals(False)
+            self.lbl_ac_pad.setText(f"{snapped / 100.0:.2f}%")
+            self._on_ac_customized()
+
+        def snap_and_update_area(v):
+            snapped = round(v / 25.0) * 25
+            if snapped != v:
+                self.slider_ac_area.blockSignals(True)
+                self.slider_ac_area.setValue(snapped)
+                self.slider_ac_area.blockSignals(False)
+            self.lbl_ac_area.setText(f"{snapped / 100.0:.2f}%")
+            self._on_ac_customized()
+
         self.slider_ac_blur.valueChanged.connect(lambda v: self.lbl_ac_blur.setText(str(v if v % 2 != 0 else v + 1)))
         self.slider_ac_dilate.valueChanged.connect(lambda v: self.lbl_ac_dilate.setText(str(v)))
-        self.slider_ac_pad.valueChanged.connect(lambda v: self.lbl_ac_pad.setText(f"{v}%"))
-        self.slider_ac_area.valueChanged.connect(lambda v: self.lbl_ac_area.setText(f"{v/10.0}%"))
-
-        self.combo_ac_preset.currentTextChanged.connect(self._on_ac_preset_changed)
-        
         self.slider_ac_blur.valueChanged.connect(self._on_ac_customized)
         self.slider_ac_dilate.valueChanged.connect(self._on_ac_customized)
-        self.slider_ac_pad.valueChanged.connect(self._on_ac_customized)
-        self.slider_ac_area.valueChanged.connect(self._on_ac_customized)
-        self.combo_ac_invert.currentTextChanged.connect(self._on_ac_customized)
+        
+        self.slider_ac_pad.valueChanged.connect(snap_and_update_pad)
+        self.slider_ac_area.valueChanged.connect(snap_and_update_area)
+
+        self.combo_ac_preset.currentTextChanged.connect(self._on_ac_preset_changed)
 
         saved_preset = self.settings.get("ac_preset", "Padrão de Fábrica")
         self.combo_ac_preset.blockSignals(True)
@@ -702,12 +728,12 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
     def _on_ac_preset_changed(self, preset_name):
         presets = {
-            # Formato: [blur, dilate, pad, min_area, invert_mode]
-            "Padrão de Fábrica":     [11, 2, 3, 15, "Automático"],
-            "Fundo um Pouco Escuro": [9,  1, 2, 10, "Forçar Fundo Preto"],
-            "Fundo Muito Escuro":    [21, 4, 4, 25, "Forçar Fundo Preto"],
-            "Fundo um Pouco Claro":  [9,  1, 2, 10, "Forçar Fundo Branco"],
-            "Fundo Muito Claro":     [25, 5, 3, 20, "Forçar Fundo Branco"]
+            # Formato: [blur, dilate, pad (%), min_area (%), invert_mode]
+            "Padrão de Fábrica":     [11, 2, 3.0, 1.5, "Automático"],
+            "Fundo um Pouco Escuro": [9,  1, 2.0, 1.0, "Forçar Fundo Preto"],
+            "Fundo Muito Escuro":    [21, 4, 4.0, 2.5, "Forçar Fundo Preto"],
+            "Fundo um Pouco Claro":  [9,  1, 2.0, 1.0, "Forçar Fundo Branco"],
+            "Fundo Muito Claro":     [25, 5, 3.0, 2.0, "Forçar Fundo Branco"]
         }
         
         if preset_name in presets:
@@ -721,8 +747,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             
             self.slider_ac_blur.setValue(vals[0]); self.lbl_ac_blur.setText(str(vals[0]))
             self.slider_ac_dilate.setValue(vals[1]); self.lbl_ac_dilate.setText(str(vals[1]))
-            self.slider_ac_pad.setValue(vals[2]); self.lbl_ac_pad.setText(f"{vals[2]}%")
-            self.slider_ac_area.setValue(vals[3]); self.lbl_ac_area.setText(f"{vals[3]/10.0}%")
+            self.slider_ac_pad.setValue(int(vals[2] * 100)); self.lbl_ac_pad.setText(f"{vals[2]:.2f}%")
+            self.slider_ac_area.setValue(int(vals[3] * 100)); self.lbl_ac_area.setText(f"{vals[3]:.2f}%")         
             self.combo_ac_invert.setCurrentText(vals[4])
             
             self.slider_ac_blur.blockSignals(False)
@@ -1948,8 +1974,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             blur_val = self.slider_ac_blur.value()
             self.settings["ac_blur"] = blur_val if blur_val % 2 != 0 else blur_val + 1
             self.settings["ac_dilate"] = self.slider_ac_dilate.value()
-            self.settings["ac_pad"] = self.slider_ac_pad.value()
-            self.settings["ac_min_area"] = self.slider_ac_area.value() / 10.0 
+            self.settings["ac_pad"] = self.slider_ac_pad.value() / 100.0
+            self.settings["ac_min_area"] = self.slider_ac_area.value() / 100.0
             self.settings["ac_invert"] = self.combo_ac_invert.currentText()
             self.settings["ac_max_crops"] = self.spin_ac_max.value()
             

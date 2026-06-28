@@ -367,9 +367,15 @@ class VidyaImageProcessor(QtCore.QThread):
                     try:
                         from core.vidya_contour_deskew import VidyaContourDeskewer
                         contour_deskewer = VidyaContourDeskewer()
-                        img, final_angle, changed = contour_deskewer.deskew(img)
+                        
+                        # Resgata a preferência de polaridade/contraste salva na aba "Imagens"
+                        ac_invert = self.settings.get("ac_invert", "Automático")
+                        
+                        # Injeta a instrução de polaridade no corretor de geometria
+                        img, final_angle, changed = contour_deskewer.deskew(img, invert_mode=ac_invert)
+                        
                         if changed: 
-                            applied_transforms.append(f"Alinhamento Físico por Contorno (Girado em {final_angle:.2f}°)")
+                            applied_transforms.append(f"Alinhamento Físico por Contorno (Girado em {final_angle:.2f}°)")                           
                             # Aciona o Crop local usando os mesmos parâmetros do VidyaCropsAuto
                             img, cropped_ok = self._post_deskew_crop(img)
                             if cropped_ok:
@@ -1090,7 +1096,13 @@ class VidyaSingleProcessor(QtCore.QThread):
                     try:
                         from core.vidya_contour_deskew import VidyaContourDeskewer
                         contour_deskewer = VidyaContourDeskewer()
-                        img, final_angle, changed = contour_deskewer.deskew(img)
+                        
+                        # Resgata a preferência de polaridade/contraste salva na aba "Imagens"
+                        ac_invert = self.settings.get("ac_invert", "Automático")
+                        
+                        # Injeta a instrução de polaridade no corretor de geometria
+                        img, final_angle, changed = contour_deskewer.deskew(img, invert_mode=ac_invert)
+                        
                         if changed: 
                             applied_transforms.append(f"Alinhamento Físico por Contorno (Girado em {final_angle:.2f}°)")                           
                             # Aciona o Crop local usando os mesmos parâmetros do VidyaCropsAuto

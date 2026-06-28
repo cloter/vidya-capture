@@ -29,39 +29,65 @@ class VidyaContourDeskewer:
         self.max_angle = max_angle
         self.min_rectangularity = min_rectangularity
 
-    def _preprocess_for_contour(self, img):
+    def _preprocess_for_contour(self, img, invert_mode="Automático"):
         """
         Prepara a imagem apagando os detalhes internos (texto/fotos)
         para focar apenas na borda externa do documento.
+        Agora injeta a polaridade correta baseada no contraste do fundo.
         """
         if len(img.shape) == 3:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         else:
             gray = img.copy()
 
-        # ATENÇÃO: o blur e o closing aqui são propositalmente leves.
-        # Um blur pesado (ex: 15x15) e um closing agressivo (ex: 9x9, 2 iterações)
-        # fazem a máscara binária "vazar" para o fundo nos trechos onde o contraste
-        # entre o documento e o fundo (ex: vinheta/sombra) é mais fraco. Isso transforma
-        # o contorno externo em uma mancha não-retangular, e o cv2.minAreaRect ajustado
-        # a essa mancha entrega um ângulo sistematicamente errado (confirmado: chegava a
-        # sobrestimar a inclinação real em ~40%, fazendo o deskew sobre-rotacionar a
-        # imagem em vez de endireitá-la). Mantemos blur/closing suficientes para tirar
-        # ruído de digitalização e fechar pequenos rasgos no papel, mas sem exagerar.
         blurred = cv2.GaussianBlur(gray, (7, 7), 0)
 
-        # Binarização de Otsu geralmente funciona bem se houver contraste
-        # entre a folha de arquivo e o fundo da digitalização.
-        _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # ---------------------------------------------------------
+        # NOVA LÓGICA: Determinação da Polaridade para o Otsu
+        # ---------------------------------------------------------
+        thresh_type = cv2.THRESH_BINARY
+        
+        if invert_mode == "Forçar Fundo Branco":
+            # Fundo claro e objeto escuro: inverte para o objeto virar 255 (Branco)
+            thresh_type = cv2.THRESH_BINARY_INV
+            
+        elif invert_mode == "Forçar Fundo Preto":
+            # Fundo escuro e objeto claro: Otsu normal já resolve
+            thresh_type = cv2.THRESH_BINARY
+            
+        else: # "Automático"
+            # Amostra heurística: lemos 5% das bordas externas para deduzir a cor do fundo
+            h, w = gray.shape
+            margem = max(1, int(min(h, w) * 0.05))
+            
+            top = gray[0:margem, :]
+            bottom = gray[h-margem:h, :]
+            left = gray[:, 0:margem]
+            right = gray[:, w-margem:w]
+            
+            # Média global da intensidade das bordas da imagem original
+            mean_border = (np.mean(top) + np.mean(bottom) + np.mean(left) + np.mean(right)) / 4.0
+            
+            if mean_border > 127:
+                # O fundo é predominantemente claro. Precisamos inverter.
+                thresh_type = cv2.THRESH_BINARY_INV
+                logger.debug(f"Deskew: Fundo claro detectado (média={mean_border:.1f}). Usando BINARY_INV.")
+            else:
+                # O fundo é escuro.
+                thresh_type = cv2.THRESH_BINARY
+                logger.debug(f"Deskew: Fundo escuro detectado (média={mean_border:.1f}). Usando BINARY normal.")
+        # ---------------------------------------------------------
 
-        # Operação morfológica para fechar pequenos buracos (rasgos no papel) sem
-        # expandir agressivamente a borda para fora do documento.
+        # Aplica a binarização com a polaridade calculada acima
+        _, thresh = cv2.threshold(blurred, 0, 255, thresh_type + cv2.THRESH_OTSU)
+
+        # Operação morfológica (mantida exatamente como a sua original)
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
 
         return closed
 
-    def estimate_angle(self, img):
+    def estimate_angle(self, img, invert_mode="Automático"):
         """
         Encontra o maior contorno e calcula a trigonometria exata da aresta superior.
         """
@@ -69,8 +95,8 @@ class VidyaContourDeskewer:
             h, w = img.shape[:2]
             total_area = h * w
 
-            # 1. Pré-processamento
-            processed = self._preprocess_for_contour(img)
+            # Repassa a instrução de polaridade para o pré-processamento
+            processed = self._preprocess_for_contour(img, invert_mode)
 
             # 2. Busca de Contornos
             contours, _ = cv2.findContours(processed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -170,17 +196,15 @@ class VidyaContourDeskewer:
         logger.info(f"Deskew de contorno aplicado (Imagem girada em {angle:.3f}°).")
         return rotated, True
 
-    def deskew(self, img):
+    def deskew(self, img, invert_mode="Automático"):
         """
         Orquestra o processo principal de correção baseado na borda.
         """
         logger.debug("Iniciando análise de Deskew por Contorno Externo")
 
-        angle = self.estimate_angle(img)
+        # Repassa o parâmetro para a estimativa geométrica
+        angle = self.estimate_angle(img, invert_mode)
 
-        # Como extraímos a trigonometria explicitamente de tl (esquerda) para tr (direita),
-        # a polaridade do ângulo já sai perfeitamente mapeada para anular o erro na
-        # matriz do getRotationMatrix2D. Não precisamos mais de gambiarras com o sinal!
         corrected, changed = self.rotate(img, angle)
 
         return corrected, angle, changed
