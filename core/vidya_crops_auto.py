@@ -23,10 +23,6 @@ class VidyaCropsAuto:
         invert_mode = settings.get("ac_invert", "Automático")
         max_crops = int(settings.get("ac_max_crops", 0))
         
-        # Novas variáveis de detecção de fundo
-        bg_detect = settings.get("bg_detect_enabled", False)
-        bg_sens = int(settings.get("bg_detect_sensitivity", 0))
-        
         processed_count = 0
         for img_path in image_paths:
             if not img_path or not os.path.exists(img_path): continue
@@ -87,10 +83,6 @@ class VidyaCropsAuto:
                         
                         # --- INÍCIO: Inteligência Poligonal Vetorial ---
                         poly_pts = []
-                        if bg_detect:
-                            peri = cv2.arcLength(c, True)
-
-                        # --- FIM: Inteligência Poligonal Vetorial ---
                         
                         # Salvamos o polígono como o quinto elemento da tupla
                         valid_rects.append((nx, ny, nw, nh, poly_pts))

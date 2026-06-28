@@ -2,6 +2,7 @@
 
 import os
 import json
+import glob
 import time
 import re
 import cv2
@@ -369,7 +370,6 @@ class VidyaImageProcessor(QtCore.QThread):
                         img, final_angle, changed = contour_deskewer.deskew(img)
                         if changed: 
                             applied_transforms.append(f"Alinhamento Físico por Contorno (Girado em {final_angle:.2f}°)")
-                            
                             # Aciona o Crop local usando os mesmos parâmetros do VidyaCropsAuto
                             img, cropped_ok = self._post_deskew_crop(img)
                             if cropped_ok:
@@ -400,7 +400,16 @@ class VidyaImageProcessor(QtCore.QThread):
                             applied_transforms.append(f"Dewarp Planificação (Agg: {dewarp_agg})")
                     except Exception as e:
                         logger.error(f"Erro na execução do Dewarp em {base_name}: {e}")
-                        
+
+                if  self.flags.get("crop") and self.settings.get("bg_detect_enabled", False) and not self._has_single_full_size_crop(img_path):
+                    try:
+                        from core.vidya_background_removal import VidyaBackgroundRemover
+                        remover = VidyaBackgroundRemover()
+                        img = remover.remove_background(img, self.settings, crop_border=True)
+                        applied_transforms.append("Remoção de fundo")
+                    except Exception as e:
+                        logger.error(f"Erro na remoção de fundo em {base_name}: {e}")
+
                 original_state_img = img.copy()
                 if pdf_source == "originais":
                     orig_path = os.path.join(self.out_dir, f"Orig_{target_name}")
@@ -828,6 +837,122 @@ class VidyaSingleProcessor(QtCore.QThread):
         except Exception as e:
             logger.error(f"Falha na tentativa de corte pós-deskew: {e}")
             return img, False
+
+    def _has_single_full_size_crop(self, image_path: str) -> bool:
+        """
+        Verifica se a imagem possui EXATAMENTE UM crop configurado (somando o JSON principal 
+        e possíveis clips) e se esse ÚNICO crop tem o tamanho exato da imagem original.
+        
+        :param image_path: Caminho completo para a imagem original.
+        :return: True se houver 1 único crop e for do tamanho original, False caso contrário.
+        """
+        if not os.path.exists(image_path):
+            return False
+            
+        # 1. Obter dimensões originais da imagem
+        try:
+            with Image.open(image_path) as img:
+                orig_w, orig_h = img.size
+        except Exception as e:
+            logger.error(f"Falha ao abrir a imagem para checagem {image_path}: {e}")
+            return False
+
+        working_dir = os.path.dirname(image_path)
+        base_name_no_ext = image_path.rsplit('.', 1)[0]
+        base_filename = os.path.basename(base_name_no_ext)
+        
+        # 2. Coletar todos os JSONs relacionados (Principal + Clips)
+        json_paths_to_check = [f"{base_name_no_ext}.json"]
+        clip_pattern = os.path.join(working_dir, f"{base_filename}_clip_*.json")
+        json_paths_to_check.extend(glob.glob(clip_pattern))
+        
+        # Variáveis de controle
+        valid_crops_count = 0
+        found_crop_w, found_crop_h = 0, 0
+        
+        # 3. Checar geometrias
+        for json_path in json_paths_to_check:
+            if not os.path.exists(json_path):
+                continue
+                
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+                    
+                crop_geom = meta.get("crop_geometry", {})
+                if crop_geom:
+                    valid_crops_count += 1
+                    
+                    # Se encontrarmos mais de um crop, já podemos abortar (falha na regra de "um só crop")
+                    if valid_crops_count > 1:
+                        return False
+                    
+                    # Guarda as dimensões do crop encontrado
+                    found_crop_w = crop_geom.get("width", orig_w)
+                    found_crop_h = crop_geom.get("height", orig_h)
+                    
+            except Exception as e:
+                logger.error(f"Falha ao ler dados de crop no JSON {json_path}: {e}")
+                continue
+                
+        # 4. Avaliação final: Tem que ser exatamente 1 crop, com largura E altura iguais ao original
+        is_same_width = (found_crop_w == orig_w)
+        is_same_height = (found_crop_h == orig_h)
+        
+        return (valid_crops_count == 1) and is_same_width and is_same_height
+
+    def _has_smaller_crop(self, image_path: str) -> bool:
+        """
+        Checks if an image has at least one crop (either in its main sidecar JSON 
+        or any associated clip JSONs) that is smaller than its original dimensions.
+        
+        :param image_path: Full path to the original image.
+        :return: True if a smaller crop geometry is found, False otherwise.
+        """
+        if not os.path.exists(image_path):
+            return False
+            
+        # 1. Get the original physical dimensions of the image
+        try:
+            with Image.open(image_path) as img:
+                orig_w, orig_h = img.size
+        except Exception as e:
+            logger.error(f"Falha ao abrir a imagem para checagem {image_path}: {e}")
+            return False
+
+        working_dir = os.path.dirname(image_path)
+        base_name_no_ext = image_path.rsplit('.', 1)[0]
+        base_filename = os.path.basename(base_name_no_ext)
+        
+        # 2. Gather all related JSON files (Main Sidecar + Any Clips)
+        json_paths_to_check = [f"{base_name_no_ext}.json"]
+        clip_pattern = os.path.join(working_dir, f"{base_filename}_clip_*.json")
+        json_paths_to_check.extend(glob.glob(clip_pattern))
+        
+        # 3. Check geometries
+        for json_path in json_paths_to_check:
+            if not os.path.exists(json_path):
+                continue
+                
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+                    
+                crop_geom = meta.get("crop_geometry", {})
+                if crop_geom:
+                    # Fallback to original dimensions if keys are missing
+                    crop_w = crop_geom.get("width", orig_w)
+                    crop_h = crop_geom.get("height", orig_h)
+                    
+                    # Check if the crop bounding box is smaller than the full canvas
+                    if crop_w < orig_w or crop_h < orig_h:
+                        return True
+                        
+            except Exception as e:
+                logger.error(f"Falha ao ler dados de crop no JSON {json_path}: {e}")
+                continue
+                
+        return False
                     
     def run(self):
         try:
@@ -967,8 +1092,7 @@ class VidyaSingleProcessor(QtCore.QThread):
                         contour_deskewer = VidyaContourDeskewer()
                         img, final_angle, changed = contour_deskewer.deskew(img)
                         if changed: 
-                            applied_transforms.append(f"Alinhamento Físico por Contorno (Girado em {final_angle:.2f}°)")
-                            
+                            applied_transforms.append(f"Alinhamento Físico por Contorno (Girado em {final_angle:.2f}°)")                           
                             # Aciona o Crop local usando os mesmos parâmetros do VidyaCropsAuto
                             img, cropped_ok = self._post_deskew_crop(img)
                             if cropped_ok:
@@ -998,6 +1122,15 @@ class VidyaSingleProcessor(QtCore.QThread):
                             img = flattened_img
                             applied_transforms.append(f"Dewarp Planificação (Agg: {dewarp_agg})")
                     except Exception as e: logger.error(f"Erro na execução do Dewarp em {base_name}: {e}")
+
+                if self.flags.get("crop") and self.settings.get("bg_detect_enabled", False) and not self._has_single_full_size_crop(img_path):
+                    try:
+                        from core.vidya_background_removal import VidyaBackgroundRemover
+                        remover = VidyaBackgroundRemover()
+                        img = remover.remove_background(img, self.settings, crop_border=True)
+                        applied_transforms.append("Remoção de fundo")
+                    except Exception as e:
+                        logger.error(f"Erro na remoção de fundo em {base_name}: {e}")
                         
                 original_state_img = img.copy()
                 if pdf_source == "originais":
