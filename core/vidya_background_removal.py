@@ -83,6 +83,132 @@ class VidyaBackgroundRemover:
 
         sens = int(settings.get("bg_detect_sensitivity", 0))
         replace_color_str = settings.get("bg_replace_color", "Branco")
+        
+        # --- NOVAS VARIÁVEIS DA INTERFACE ---
+        use_custom_bg = settings.get("ac_use_custom_bg", False)
+        bg_color_str = settings.get("ac_bg_color", "Preto")
+
+        # Determina se precisamos de canal alpha
+        need_alpha = (replace_color_str == "Transparente" or
+                      (replace_color_str.startswith("#") and len(replace_color_str) == 9))  # #AARRGGBB
+
+        # Converte a imagem para BGRA se for necessário, ou mantém BGR
+        if need_alpha:
+            if img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+            elif img.shape[2] == 4:
+                pass  # já está BGRA
+            else:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2BGRA)
+        else:
+            if img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+
+        h, w = img.shape[:2]
+        
+        # Calcula a tolerância a partir do slider da interface (-50 a 50)
+        if sens >= 0:
+            tolerance = int(25 + (sens / 50.0) * 95)
+        else:
+            tolerance = int(25 - (abs(sens) / 50.0) * 24)
+            
+        tolerance = max(1, min(255, tolerance))
+
+        # Obtém sementes
+        seeds = self._get_seed_points(h, w)
+
+        if img.shape[2] == 4:
+            img_for_flood = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        else:
+            img_for_flood = img.copy()
+
+        if use_custom_bg:
+            # ---------------------------------------------------------
+            # ROTA 1: REMOÇÃO DE FUNDO POR COR ESTÁTICA + TOPOLOGIA
+            # ---------------------------------------------------------
+            target_bgr = self._parse_color(bg_color_str, need_alpha=False)
+            
+            # Aplica um leve desfoque para homogeneizar micro-ruídos (poeira do scanner)
+            blurred = cv2.GaussianBlur(img_for_flood, (5, 5), 0)
+            
+            lower_bound = np.array([max(0, c - tolerance) for c in target_bgr], dtype=np.uint8)
+            upper_bound = np.array([min(255, c + tolerance) for c in target_bgr], dtype=np.uint8)
+            
+            # Máscara primária: Tudo que tem a exata cor do fundo fica Branco (255)
+            color_mask = cv2.inRange(blurred, lower_bound, upper_bound)
+            
+            # Máscara de suporte estrutural para o OpenCV calcular topologia
+            flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+            
+            # Isolamento Topológico: Preenche de cinza (128) apenas as áreas de fundo
+            # que nascem nas bordas externas da imagem, evitando furar fotos no meio da página.
+            for (sx, sy) in seeds:
+                if sx < 0 or sx >= w or sy < 0 or sy >= h:
+                    continue
+                    
+                # Se o pixel na borda tem a cor do fundo e a região não foi mapeada
+                if color_mask[sy, sx] == 255 and flood_mask[sy + 1, sx + 1] == 0:
+                    cv2.floodFill(color_mask, flood_mask, (sx, sy), 128)
+            
+            # O fundo real será tudo aquilo que o OpenCV conseguiu tocar e pintar de 128
+            bg_mask = (color_mask == 128)
+
+        else:
+            # ---------------------------------------------------------
+            # ROTA 2: REMOÇÃO DE FUNDO AUTOMÁTICA (FloodFill Dinâmico)
+            # ---------------------------------------------------------
+            mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+            flags = 4 | cv2.FLOODFILL_FIXED_RANGE | (tolerance << 8)
+
+            for (sx, sy) in seeds:
+                if sx < 0 or sx >= w or sy < 0 or sy >= h:
+                    continue
+                if mask[sy + 1, sx + 1] == 0:
+                    img_work = img_for_flood.copy()
+                    cv2.floodFill(
+                        img_work, mask, (sx, sy), (0, 0, 0),
+                        loDiff=(tolerance, tolerance, tolerance),
+                        upDiff=(tolerance, tolerance, tolerance),
+                        flags=flags
+                    )
+            
+            bg_mask = (mask[1:h+1, 1:w+1] > 0)
+
+        # -------------------------------------------------------------
+        # APLICAÇÃO FINAL DA SUBSTITUIÇÃO OU TRANSPARÊNCIA
+        # -------------------------------------------------------------
+        if need_alpha:
+            replace_color = self._parse_color(replace_color_str, need_alpha=True)
+            if replace_color_str == "Transparente":
+                replace_color = (0, 0, 0, 0)
+                
+            dst = np.full_like(img, replace_color, dtype=img.dtype)
+            dst[~bg_mask] = img[~bg_mask]
+            
+            if crop_border and replace_color[3] == 0:
+                y_coords, x_coords = np.where(~bg_mask)
+                if len(y_coords) > 0 and len(x_coords) > 0:
+                    y_min, y_max = np.min(y_coords), np.max(y_coords)
+                    x_min, x_max = np.min(x_coords), np.max(x_coords)
+                    dst = dst[y_min:y_max+1, x_min:x_max+1]
+            return dst
+        else:
+            replace_color = self._parse_color(replace_color_str, need_alpha=False)
+            dst = img.copy()
+            dst[bg_mask] = replace_color
+            return dst
+            
+    def remove_background_old(self, img, settings: dict, crop_border: bool = False):
+        """
+        Aplica a remoção de fundo se `bg_detect_enabled` for True.
+        Retorna a imagem modificada (pode ter canal alpha se a cor de substituição for transparente).
+        Se `crop_border` for True e o fundo for Transparente, a imagem será cortada no limite do conteúdo.
+        """
+        if not settings.get("bg_detect_enabled", False):
+            return img
+
+        sens = int(settings.get("bg_detect_sensitivity", 0))
+        replace_color_str = settings.get("bg_replace_color", "Branco")
 
         # Determina se precisamos de canal alpha
         need_alpha = (replace_color_str == "Transparente" or

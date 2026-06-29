@@ -491,8 +491,62 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_ac.addRow("Dilatação de Fissuras:", wrap_slider(self.lbl_ac_dilate, self.slider_ac_dilate))
         lyt_ac.addRow("Margem de Segurança:", wrap_slider(self.lbl_ac_pad, self.slider_ac_pad))
         lyt_ac.addRow("Área Mínima do Recorte:", wrap_slider(self.lbl_ac_area, self.slider_ac_area))
-        lyt_ac.addRow("Cálculo de Contraste:", self.combo_ac_invert)
-        lyt_ac.addRow("Número Máximo de Quadros:", self.spin_ac_max)
+        
+        # --- NOVA ORGANIZAÇÃO DO LAYOUT (Na mesma linha) ---
+        lyt_inline_ac = QtWidgets.QHBoxLayout()
+        
+        # 1. Cálculo de Contraste
+        lbl_contraste = QtWidgets.QLabel("Cálculo de Contraste:")
+        lyt_inline_ac.addWidget(lbl_contraste)
+        lyt_inline_ac.addWidget(self.combo_ac_invert)
+        
+        lyt_inline_ac.addSpacing(30) # Respiro visual entre os blocos
+        
+        # 2. Número Máximo de Quadros
+        lbl_max_crops = QtWidgets.QLabel("Número Máximo de Quadros:")
+        lyt_inline_ac.addWidget(lbl_max_crops)
+        lyt_inline_ac.addWidget(self.spin_ac_max)
+        
+        # Adiciona a linha combinada ao layout do grupo Auto Crop
+        lyt_ac.addRow(lyt_inline_ac)
+        
+        # ---> INSERIR AQUI: Controle de cor estática para os recortes
+        lyt_ac_bg = QtWidgets.QHBoxLayout()
+        
+        self.chk_ac_custom_bg = QtWidgets.QCheckBox("Usar cor de fundo customizada para os recortes")
+        self.chk_ac_custom_bg.setChecked(self.settings.get("ac_use_custom_bg", False))
+        
+        lbl_ac_bg_color = QtWidgets.QLabel("Cor de fundo:")
+        
+        self.combo_ac_bg_color = QtWidgets.QComboBox()
+        self.combo_ac_bg_color.addItems(["Preto", "Branco", "Cinza"])
+        
+        saved_ac_bg = self.settings.get("ac_bg_color", "Preto")
+        if saved_ac_bg not in ["Preto", "Branco", "Cinza"]:
+            self.combo_ac_bg_color.addItem(saved_ac_bg)
+            
+        self.combo_ac_bg_color.addItem("Customizado...")
+        
+        self.combo_ac_bg_color.blockSignals(True)
+        self.combo_ac_bg_color.setCurrentText(saved_ac_bg)
+        self.combo_ac_bg_color.blockSignals(False)
+        
+        self.combo_ac_bg_color.currentTextChanged.connect(self._on_ac_bg_color_changed)
+        
+        # Lógica visual: ativa/desativa os componentes dinamicamente
+        self.combo_ac_bg_color.setEnabled(self.chk_ac_custom_bg.isChecked())
+        lbl_ac_bg_color.setEnabled(self.chk_ac_custom_bg.isChecked())
+        
+        self.chk_ac_custom_bg.toggled.connect(self.combo_ac_bg_color.setEnabled)
+        self.chk_ac_custom_bg.toggled.connect(lbl_ac_bg_color.setEnabled)
+        
+        lyt_ac_bg.addWidget(self.chk_ac_custom_bg)
+        lyt_ac_bg.addSpacing(15)
+        lyt_ac_bg.addWidget(lbl_ac_bg_color)
+        lyt_ac_bg.addWidget(self.combo_ac_bg_color)
+        lyt_ac_bg.addStretch()
+
+        lyt_ac.addRow(lyt_ac_bg)
 
         self.images_form_layout.addRow(grp_autocrop)
         
@@ -551,10 +605,6 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.lbl_bg_sens_val.setMinimumWidth(35)
         self.slider_bg_sens.valueChanged.connect(lambda v: self.lbl_bg_sens_val.setText(f"+{v}" if v > 0 else str(v)))
 
-        lyt_sens = QtWidgets.QHBoxLayout()
-        lyt_sens.addWidget(self.lbl_bg_sens_val)
-        lyt_sens.addWidget(self.slider_bg_sens)
-
         self.combo_bg_color = QtWidgets.QComboBox()
         # ---> LISTA ATUALIZADA AQUI <---
         self.combo_bg_color.addItems(["Preto", "Branco", "Cinza", "Transparente"])
@@ -572,9 +622,26 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
         self.combo_bg_color.currentTextChanged.connect(self._on_bg_color_changed)
 
+        # --- NOVA ORGANIZAÇÃO DO LAYOUT (Na mesma linha) ---
         lyt_bg.addRow(self.chk_bg_detect)
-        lyt_bg.addRow("Sensibilidade da detecção:", lyt_sens)
-        lyt_bg.addRow("Substituir cor do fundo por:", self.combo_bg_color)
+        
+        lyt_inline = QtWidgets.QHBoxLayout()
+
+        # 1. Substituir cor
+        lbl_cor = QtWidgets.QLabel("Substituir cor do fundo por:")
+        lyt_inline.addWidget(lbl_cor)
+        lyt_inline.addWidget(self.combo_bg_color)
+        
+        lyt_inline.addSpacing(30) # Respiro visual entre os blocos
+
+        # 2. Sensibilidade
+        lbl_sens = QtWidgets.QLabel("Sensibilidade da detecção:")
+        lyt_inline.addWidget(lbl_sens)
+        lyt_inline.addWidget(self.lbl_bg_sens_val)
+        lyt_inline.addWidget(self.slider_bg_sens)
+
+        # Adiciona a linha combinada ao layout do grupo
+        lyt_bg.addRow(lyt_inline)
 
         self.images_form_layout.addRow(grp_bg_control)
         # =========================================================================
@@ -590,35 +657,75 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.combo_format.addItems(["JPG", "PNG", "TIFF"])
         self.combo_format.setCurrentText(self.settings.get("image_format", "JPG"))
         self.combo_format.currentTextChanged.connect(self._on_image_format_changed)
-        self.images_form_layout.addRow("Formato de Saída:", self.combo_format)
         
-        self.row_jpg = QtWidgets.QWidget()
-        jpg_layout = QtWidgets.QHBoxLayout(self.row_jpg)
-        jpg_layout.setContentsMargins(0, 0, 0, 0)
+        # --- NOVA ORGANIZAÇÃO DO LAYOUT (50% / 50%) ---
+        lyt_format_inline = QtWidgets.QHBoxLayout()
+        
+        # ---------------------------------------------------------
+        # Container da Esquerda (Ocupará 50% do espaço)
+        # ---------------------------------------------------------
+        self.widget_format_left = QtWidgets.QWidget()
+        lyt_left = QtWidgets.QHBoxLayout(self.widget_format_left)
+        lyt_left.setContentsMargins(0, 0, 15, 0) # Margem direita para não colar no meio
+        
+        lbl_formato = QtWidgets.QLabel("Formato de Saída:")
+        lyt_left.addWidget(lbl_formato)
+        lyt_left.addWidget(self.combo_format)
+        
+        # ---------------------------------------------------------
+        # Container da Direita (Ocupará os outros 50% do espaço)
+        # ---------------------------------------------------------
+        self.widget_format_right = QtWidgets.QWidget()
+        lyt_right = QtWidgets.QHBoxLayout(self.widget_format_right)
+        lyt_right.setContentsMargins(15, 0, 0, 0) # Margem esquerda para espaçar
+        
+        # Container dinâmico para JPG
+        self.widget_jpg = QtWidgets.QWidget()
+        lyt_jpg = QtWidgets.QHBoxLayout(self.widget_jpg)
+        lyt_jpg.setContentsMargins(0, 0, 0, 0)
+        lbl_jpg = QtWidgets.QLabel("Qualidade JPG:")
         self.spin_jpg_quality = QtWidgets.QSpinBox()
         self.spin_jpg_quality.setRange(50, 100)
         self.spin_jpg_quality.setValue(int(self.settings.get("jpg_quality", 95)))
         self.spin_jpg_quality.setSuffix("%")
-        jpg_layout.addWidget(self.spin_jpg_quality)
-        self.images_form_layout.addRow("Qualidade JPG:", self.row_jpg)
+        lyt_jpg.addWidget(lbl_jpg)
+        lyt_jpg.addWidget(self.spin_jpg_quality)
         
-        self.row_png = QtWidgets.QWidget()
-        png_layout = QtWidgets.QHBoxLayout(self.row_png)
-        png_layout.setContentsMargins(0, 0, 0, 0)
+        # Container dinâmico para PNG
+        self.widget_png = QtWidgets.QWidget()
+        lyt_png = QtWidgets.QHBoxLayout(self.widget_png)
+        lyt_png.setContentsMargins(0, 0, 0, 0)
+        lbl_png = QtWidgets.QLabel("Nível Compressão PNG:")
         self.spin_png_compression = QtWidgets.QSpinBox()
         self.spin_png_compression.setRange(4, 9)
         self.spin_png_compression.setValue(int(self.settings.get("png_compression", 6)))
-        png_layout.addWidget(self.spin_png_compression)
-        self.images_form_layout.addRow("Nível Compressão PNG:", self.row_png)
+        lyt_png.addWidget(lbl_png)
+        lyt_png.addWidget(self.spin_png_compression)
         
-        self.row_tiff = QtWidgets.QWidget()
-        tiff_layout = QtWidgets.QHBoxLayout(self.row_tiff)
-        tiff_layout.setContentsMargins(0, 0, 0, 0)
+        # Container dinâmico para TIFF
+        self.widget_tiff = QtWidgets.QWidget()
+        lyt_tiff = QtWidgets.QHBoxLayout(self.widget_tiff)
+        lyt_tiff.setContentsMargins(0, 0, 0, 0)
+        lbl_tiff = QtWidgets.QLabel("Compressão TIFF:")
         self.combo_tiff_compression = QtWidgets.QComboBox()
         self.combo_tiff_compression.addItems(["Sem compressão", "Compressão lossless LZW", "Compressão lossless ZIP", "Compressão JPEG"])
         self.combo_tiff_compression.setCurrentText(self.settings.get("tiff_compression", "Sem compressão"))
-        tiff_layout.addWidget(self.combo_tiff_compression)
-        self.images_form_layout.addRow("Compressão TIFF:", self.row_tiff)
+        lyt_tiff.addWidget(lbl_tiff)
+        lyt_tiff.addWidget(self.combo_tiff_compression)
+        
+        # Adiciona todos os layouts dinâmicos no container da direita
+        lyt_right.addWidget(self.widget_jpg)
+        lyt_right.addWidget(self.widget_png)
+        lyt_right.addWidget(self.widget_tiff)
+        
+        # ---------------------------------------------------------
+        # Montagem Final: Adiciona esquerda e direita com "stretch=1"
+        # ---------------------------------------------------------
+        lyt_format_inline.addWidget(self.widget_format_left, 1)
+        lyt_format_inline.addWidget(self.widget_format_right, 1)
+        
+        self.images_form_layout.addRow(lyt_format_inline)
+        # =========================================================================
         
         # =========================================================================
         # 3. CONTROLE DA IMAGEM CAPTURADA (POST-PROCESSING) + BOTÃO RESTAURAR
@@ -672,6 +779,43 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.tabs.addTab(tab, "Imagens")
         self._on_image_format_changed(self.combo_format.currentText())
 
+    def _on_ac_bg_color_changed(self, text):
+        """Abre o seletor nativo do Qt para a cor de fundo do Auto Crop (sem canal Alpha)."""
+        if text == "Customizado...":
+            initial_color = QtGui.QColor(QtCore.Qt.black)
+            current_saved = self.settings.get("ac_bg_color", "Preto")
+            
+            if current_saved.startswith("#"):
+                initial_color = QtGui.QColor(current_saved)
+            elif current_saved == "Branco":
+                initial_color = QtGui.QColor(QtCore.Qt.white)
+            elif current_saved == "Cinza":
+                initial_color = QtGui.QColor(QtCore.Qt.gray)
+
+            # Usa o seletor padrão (sem o ShowAlphaChannel, já que para o recorte precisamos de RGB sólido)
+            color = QtWidgets.QColorDialog.getColor(
+                initial_color, 
+                self, 
+                "Escolher cor de fundo para o Auto Crop"
+            )
+            
+            if color.isValid():
+                hex_val = color.name().upper()
+                
+                if self.combo_ac_bg_color.findText(hex_val) == -1:
+                    idx = self.combo_ac_bg_color.count() - 1
+                    self.combo_ac_bg_color.insertItem(idx, hex_val)
+                
+                self.combo_ac_bg_color.blockSignals(True)
+                self.combo_ac_bg_color.setCurrentText(hex_val)
+                self.combo_ac_bg_color.blockSignals(False)
+                
+                self.settings["ac_bg_color"] = hex_val 
+            else:
+                self.combo_ac_bg_color.blockSignals(True)
+                self.combo_ac_bg_color.setCurrentText(self.settings.get("ac_bg_color", "Preto"))
+                self.combo_ac_bg_color.blockSignals(False)
+                
     def _on_bg_color_changed(self, text):
         if text == "Customizado...":
             initial_color = QtGui.QColor(QtCore.Qt.black)
@@ -716,15 +860,12 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                 self.combo_bg_color.blockSignals(False)
                 
     def _on_image_format_changed(self, fmt):
-        lbl_jpg = self.images_form_layout.labelForField(self.row_jpg)
-        lbl_png = self.images_form_layout.labelForField(self.row_png)
-        lbl_tiff = self.images_form_layout.labelForField(self.row_tiff)
-        if lbl_jpg: lbl_jpg.setVisible(fmt == "JPG")
-        self.row_jpg.setVisible(fmt == "JPG")
-        if lbl_png: lbl_png.setVisible(fmt == "PNG")
-        self.row_png.setVisible(fmt == "PNG")
-        if lbl_tiff: lbl_tiff.setVisible(fmt == "TIFF")
-        self.row_tiff.setVisible(fmt == "TIFF")
+        if hasattr(self, 'widget_jpg'):
+            self.widget_jpg.setVisible(fmt == "JPG")
+        if hasattr(self, 'widget_png'):
+            self.widget_png.setVisible(fmt == "PNG")
+        if hasattr(self, 'widget_tiff'):
+            self.widget_tiff.setVisible(fmt == "TIFF")
         
     def _on_ac_preset_changed(self, preset_name):
         presets = {
@@ -1978,6 +2119,11 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             self.settings["ac_min_area"] = self.slider_ac_area.value() / 100.0
             self.settings["ac_invert"] = self.combo_ac_invert.currentText()
             self.settings["ac_max_crops"] = self.spin_ac_max.value()
+            
+            # ---> INSERIR AQUI: Persistência da cor customizada do Auto Crop
+            self.settings["ac_use_custom_bg"] = self.chk_ac_custom_bg.isChecked()
+            self.settings["ac_bg_color"] = self.combo_ac_bg_color.currentText()
+            # ----------------------------------------------------------------
             
             # ---> INSERIR AQUI: Salvar o estado da remoção de fundo <---
             self.settings["bg_detect_enabled"] = self.chk_bg_detect.isChecked()

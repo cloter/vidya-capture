@@ -2,6 +2,8 @@
 # Script de automação para gerar o pacote .deb do Vidya Capture (via dpkg-deb)
 # sudo dpkg -i vidya-capture_0.1.x_all.deb; sudo apt --fix-broken install
 
+find . -type f -name "*.py" -print0 | xargs -0 wc -l | tail -n1
+
 echo "=========================================="
 echo " Iniciando empacotamento do Vidya Capture"
 echo "=========================================="

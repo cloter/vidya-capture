@@ -12,6 +12,25 @@ logger = get_logger("AutoCrop")
 
 class VidyaCropsAuto:
     @staticmethod
+    def _parse_color_to_bgr(color_str: str) -> tuple:
+        """Converte a string de cor da interface para uma tupla BGR do OpenCV."""
+        color_map = {
+            "Preto": (0, 0, 0),
+            "Branco": (255, 255, 255),
+            "Cinza": (128, 128, 128)
+        }
+        if color_str in color_map:
+            return color_map[color_str]
+            
+        # Converte Hexadecimal #RRGGBB para BGR
+        if color_str.startswith("#") and len(color_str) == 7:
+            h = color_str.lstrip('#')
+            # Extrai BB, GG, RR
+            return (int(h[4:6], 16), int(h[2:4], 16), int(h[0:2], 16))
+            
+        return (0, 0, 0) # Fallback de segurança (Preto)
+        
+    @staticmethod
     def process_images(image_paths: list) -> int:
         settings = load_settings()
         
@@ -22,6 +41,11 @@ class VidyaCropsAuto:
         min_area_val = settings.get("ac_min_area", 1.5) / 100.0
         invert_mode = settings.get("ac_invert", "Automático")
         max_crops = int(settings.get("ac_max_crops", 0))
+        
+        # --- NOVAS VARIÁVEIS DE COR DE FUNDO ---
+        use_custom_bg = settings.get("ac_use_custom_bg", False)
+        bg_color_str = settings.get("ac_bg_color", "Preto")
+        # ---------------------------------------
         
         processed_count = 0
         for img_path in image_paths:
@@ -47,20 +71,43 @@ class VidyaCropsAuto:
                 
                 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 
-                # Desfoque paramétrico
+                # Desfoque paramétrico base (usado em ambas as rotas para mitigar ruído)
                 b_size = blur_val if blur_val % 2 != 0 else blur_val + 1
-                blurred = cv2.GaussianBlur(gray, (b_size, b_size), 0)
-                
-                # Binarização de Otsu
-                _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                
-                # Lógica Direcionada de Contraste
-                if invert_mode == "Forçar Fundo Branco":
-                    thresh = cv2.bitwise_not(thresh)
-                elif invert_mode == "Automático":
-                    border_pixels = np.concatenate([thresh[0, :], thresh[-1, :], thresh[:, 0], thresh[:, -1]])
-                    if np.mean(border_pixels) > 127:
+
+                if use_custom_bg:
+                    # ---------------------------------------------------------
+                    # ROTA 1: RECORTE POR COR ESTÁTICA (inRange)
+                    # ---------------------------------------------------------
+                    blurred_color = cv2.GaussianBlur(img, (b_size, b_size), 0)
+                    target_bgr = VidyaCropsAuto._parse_color_to_bgr(bg_color_str)
+                    
+                    # Define uma tolerância segura (ex: ±30 tons) para variações de iluminação do scanner
+                    tolerance = 30 
+                    lower_bound = np.array([max(0, c - tolerance) for c in target_bgr], dtype=np.uint8)
+                    upper_bound = np.array([min(255, c + tolerance) for c in target_bgr], dtype=np.uint8)
+                    
+                    # Cria a máscara: pixels que caem no intervalo da cor ficam brancos (255)
+                    bg_mask = cv2.inRange(blurred_color, lower_bound, upper_bound)
+                    
+                    # Como queremos que o *documento* seja a massa branca para encontrar o contorno, invertemos a máscara
+                    thresh = cv2.bitwise_not(bg_mask)
+
+                else:
+                    # ---------------------------------------------------------
+                    # ROTA 2: RECORTE AUTOMÁTICO (OTSU CLÁSSICO)
+                    # ---------------------------------------------------------
+                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                    blurred_gray = cv2.GaussianBlur(gray, (b_size, b_size), 0)
+                    
+                    _, thresh = cv2.threshold(blurred_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    
+                    # Lógica Direcionada de Contraste original
+                    if invert_mode == "Forçar Fundo Branco":
                         thresh = cv2.bitwise_not(thresh)
+                    elif invert_mode == "Automático":
+                        border_pixels = np.concatenate([thresh[0, :], thresh[-1, :], thresh[:, 0], thresh[:, -1]])
+                        if np.mean(border_pixels) > 127:
+                            thresh = cv2.bitwise_not(thresh)
                 
                 # Dilatação Morfológica Paramétrica
                 if dilate_val > 0:
