@@ -11,7 +11,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 
 # ---> VARIÁVEL GLOBAL DE pip3 install pytesseract
 # (Atualizada por script externo de controle de versão)
-VIDYA_VERSION = "0.2.34"
+VIDYA_VERSION = "0.2.41"
 VIDYA_AUTHOR = "Cloter Migiorini Fiho"
 # Injeta no ambiente para leitura em qualquer arquivo via: os.getenv("VIDYA_VERSION")
 os.environ["VIDYA_VERSION"] = VIDYA_VERSION 

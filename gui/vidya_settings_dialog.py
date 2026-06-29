@@ -10,6 +10,7 @@ import getpass
 from datetime import datetime
 from core.config import COLOR_MAP, load_settings, save_settings
 from hardware.vidya_v4l2_scanner import V4L2AdvancedScanner
+from gui.vidya_profiles_dialog import VidyaProfilesDialog # <--- INSERIR AQUI
 
 class V4L2AdvancedDialog(QtWidgets.QDialog):
     def __init__(self, scan_data, current_config, parent=None):
@@ -111,6 +112,12 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         btn_save = QtWidgets.QPushButton("Aplicar")
         btn_cancel = QtWidgets.QPushButton("Cancelar")
         
+        # ---> INSERIR: Instanciação do Botão de Perfis
+        btn_profiles = QtWidgets.QPushButton("Perfis de Acervo")
+        btn_profiles.setIcon(QtGui.QIcon.fromTheme("document-properties"))
+        btn_profiles.clicked.connect(self._open_profiles_dialog)
+        # ----------------------------------------------------
+        
         btn_save.setIcon(QtGui.QIcon.fromTheme("document-save"))
         btn_cancel.setIcon(QtGui.QIcon.fromTheme("process-stop"))
         
@@ -119,6 +126,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
         btn_layout.addStretch()
         btn_layout.addWidget(btn_cancel)
+        btn_layout.addWidget(btn_profiles) # <--- Posicionado entre Cancelar e Aplicar
         btn_layout.addWidget(btn_save)
         layout.addLayout(btn_layout)
         
@@ -2051,7 +2059,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.lbl_calc_bloco.setText(f"Bloco: {block_size}")
         self.lbl_calc_valor_c.setText(f"Valor C: {c_final}")
         
-    def _save_and_close(self):
+    def _sync_ui_to_settings(self):
         tab_name = self.current_tab_name
         
         self.settings["input_source"] = self.combo_source.currentText()
@@ -2179,6 +2187,48 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             
         self._save_project_metadata(current_working_dir)
         
+        # save_settings(self.settings)
+        # self.settings_saved.emit(self.settings, tab_name)
+        # self.accept()
+        
+    def _save_and_close(self):
+        """Método encapsulado que sincroniza a UI, salva no disco e fecha."""
+        tab_name = self.current_tab_name
+        self._sync_ui_to_settings() # Coleta tudo que está na tela
+        
         save_settings(self.settings)
         self.settings_saved.emit(self.settings, tab_name)
         self.accept()
+
+    def _open_profiles_dialog(self):
+        """Abre o gerenciador de perfis garantindo que a memória está atualizada com a UI."""
+        self._sync_ui_to_settings()
+        
+        dialog = VidyaProfilesDialog(self.settings, self)
+        
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            selected_profile = dialog.get_selected_profile()
+            if selected_profile:
+                # BLINDAGEM INVERSA: Chaves que NUNCA devem ser alteradas ao carregar um perfil
+                keys_to_exclude = [
+                    "profiles_acervo", "working_dir", "recent_projects", 
+                    "pdf_export_path", "project_mode", "project_integrity_check"
+                ]
+                
+                # Injeta os valores do perfil na memória principal, ignorando as chaves de projeto
+                for key, value in selected_profile.items():
+                    if key not in keys_to_exclude:
+                        self.settings[key] = value
+                
+                QtWidgets.QMessageBox.information(
+                    self, "Perfil Carregado",
+                    "O perfil de acervo foi carregado com sucesso!\n\n"
+                    "O seu projeto atual e as pastas de destino foram mantidos intactos. "
+                    "O sistema aplicará as configurações agora."
+                )
+                
+                # Salvar no disco e forçar o fechamento (reload) para atualizar a interface central
+                save_settings(self.settings)
+                self.settings_saved.emit(self.settings, self.current_tab_name)
+                self.accept()    
+        

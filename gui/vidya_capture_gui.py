@@ -1590,7 +1590,7 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
             # Se a imagem processada estava escondida (o usuário editava outra coisa), exibe a confirmação
             QtWidgets.QMessageBox.information(self, "Auto Crop Concluído", f"A inteligência artificial do Vidya detectou e aplicou recortes em {processed_count} imagem(ns) com sucesso!")
         else:
-            QtWidgets.QMessageBox.warning(self, "Auto Crop", "O algoritmo não conseguiu distinguir documentos do fundo nestas imagens.\nTente aplicar marcadores manuais.")
+            QtWidgets.QMessageBox.warning(self, "Auto Crop", "O algoritmo não conseguiu distinguir documentos do fundo nestas imagens.\nTente aplicar marcadores manuais, ou selecione uma cor de fundo diferente.")
             
     def resizeEvent(self, event):
         super().resizeEvent(event)
