@@ -1199,6 +1199,11 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.chk_crop = QtWidgets.QCheckBox("Cortar (Crop)")
         self.chk_crop.setChecked(self.settings.get("proc_crop", True))
         
+        # ---> NOVO LOCAL: Checkbox do Deskew de Contorno movido para cima <---
+        self.chk_contour_deskew = QtWidgets.QCheckBox("Alinhamento Horizontal de Imagens/Fotos")
+        self.chk_contour_deskew.setChecked(self.settings.get("proc_contour_deskew", False))
+        self.chk_contour_deskew.setToolTip("Alinha a imagem baseando-se no contorno estrutural externo (borda do objeto/papel).")
+        
         self.chk_deskew = QtWidgets.QCheckBox("Alinhamento de Imagens com Texto")
         self.chk_deskew.setChecked(self.settings.get("proc_deskew", True))
         
@@ -1246,6 +1251,9 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
         lyt_geom.addWidget(self.chk_crop)
         
+        # ---> INSERIDO AQUI: Fica acima do "Alinhamento de Imagens com Texto" (que está no grid abaixo) <---
+        lyt_geom.addWidget(self.chk_contour_deskew)
+        
         # ---> INÍCIO DA CORREÇÃO: ALINHAMENTO EM GRADE <---
         grid_geom = QtWidgets.QGridLayout()
         grid_geom.setContentsMargins(0, 0, 0, 0) # Remove margens extras do grid
@@ -1266,13 +1274,6 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
         lyt_geom.addLayout(grid_geom)
         # ---> FIM DA CORREÇÃO <---
-        
-        # ---> INSERIR AQUI: Novo checkbox para o Deskew de Contorno <---
-        self.chk_contour_deskew = QtWidgets.QCheckBox("Alinhamento Horizontal de Imagens/Fotos")
-        self.chk_contour_deskew.setChecked(self.settings.get("proc_contour_deskew", False))
-        self.chk_contour_deskew.setToolTip("Alinha a imagem baseando-se no contorno estrutural externo (borda do objeto/papel).")
-        lyt_geom.addWidget(self.chk_contour_deskew)
-        # ---> FIM DA INSERÇÃO <---
 
         lyt_geom.addWidget(self.chk_pdf)
         
