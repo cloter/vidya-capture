@@ -738,7 +738,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         # =========================================================================
         # 3. CONTROLE DA IMAGEM CAPTURADA (POST-PROCESSING) + BOTÃO RESTAURAR
         # =========================================================================
-        post_label = QtWidgets.QLabel("<b>Controle da imagem capturada</b><br><small>Ajustes numéricos aplicados via software após o clique de qualquer equipamento.</small>")
+        post_label = QtWidgets.QLabel("<b>Controle da Imagem Capturada</b><br><small>Ajustes numéricos aplicados via software após o clique de qualquer equipamento.</small>")
         post_label.setWordWrap(True)
         self.images_form_layout.addRow(post_label)
         
@@ -772,6 +772,19 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_pc.addWidget(self.lbl_post_contrast)
         lyt_pc.addWidget(self.slider_post_contrast)
         
+        # ---> NOVA ORGANIZAÇÃO DO LAYOUT (Na mesma linha) <---
+        lyt_inline_post = QtWidgets.QHBoxLayout()
+        
+        lbl_brilho = QtWidgets.QLabel("Brilho:")
+        lyt_inline_post.addWidget(lbl_brilho)
+        lyt_inline_post.addLayout(lyt_pb)
+        
+        lyt_inline_post.addSpacing(30) # Respiro visual entre os blocos
+        
+        lbl_contraste = QtWidgets.QLabel("Contraste:")
+        lyt_inline_post.addWidget(lbl_contraste)
+        lyt_inline_post.addLayout(lyt_pc)
+        
         btn_reset_post = QtWidgets.QPushButton(" Restaurar padrões de fábrica")
         btn_reset_post.setIcon(QtGui.QIcon.fromTheme("edit-clear"))
         btn_reset_post.clicked.connect(self._reset_post_capture_defaults)
@@ -780,8 +793,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_btn_post.addStretch()
         lyt_btn_post.addWidget(btn_reset_post)
         
-        self.images_form_layout.addRow("Brilho:", lyt_pb)
-        self.images_form_layout.addRow("Contraste:", lyt_pc)
+        # Adiciona a linha combinada (Brilho + Contraste) ao form layout principal
+        self.images_form_layout.addRow(lyt_inline_post)
         self.images_form_layout.addRow("", lyt_btn_post)
 
         self.tabs.addTab(tab, "Imagens")
@@ -874,7 +887,131 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             self.widget_png.setVisible(fmt == "PNG")
         if hasattr(self, 'widget_tiff'):
             self.widget_tiff.setVisible(fmt == "TIFF")
-        
+
+    def _safe_set_combo(self, combo, text):
+        """Verifica se o texto existe no QComboBox. Se não, insere antes de 'Customizado...'."""
+        if combo.findText(text) == -1:
+            idx = max(0, combo.count() - 1)
+            combo.insertItem(idx, text)
+        combo.blockSignals(True)
+        combo.setCurrentText(text)
+        combo.blockSignals(False)
+
+    def _sync_settings_to_ui(self):
+        """Lê self.settings e atualiza o estado de todos os widgets visuais da tela."""
+        # --- Aba Dispositivos ---
+        if hasattr(self, 'combo_source'):
+            self.combo_source.setCurrentText(self.settings.get("input_source", "Câmeras"))
+        if hasattr(self, 'combo_scanner_dpi'):
+            self.combo_scanner_dpi.setCurrentText(str(self.settings.get("scanner_dpi", "300")))
+            self.combo_scanner_mode.setCurrentText(self.settings.get("scanner_color_mode", "Color"))
+            self.combo_scanner_source.setCurrentText(self.settings.get("scanner_source", "Flatbed"))
+            self.combo_scanner_paper.setCurrentText(self.settings.get("scanner_paper_size", "Máximo do Vidro"))
+            self.slider_scanner_brightness.setValue(self.settings.get("scanner_brightness", 0))
+            self.slider_scanner_contrast.setValue(self.settings.get("scanner_contrast", 0))
+
+        # --- Aba Imagens (Auto-Crop e Fundo) ---
+        if hasattr(self, 'combo_ac_preset'):
+            self.combo_ac_preset.blockSignals(True)
+            self.combo_ac_preset.setCurrentText(self.settings.get("ac_preset", "Padrão de Fábrica"))
+            self.combo_ac_preset.blockSignals(False)
+            
+            self.slider_ac_blur.setValue(self.settings.get("ac_blur", 11))
+            self.slider_ac_dilate.setValue(self.settings.get("ac_dilate", 2))
+            self.slider_ac_pad.setValue(int(float(self.settings.get("ac_pad", 3.0)) * 100))
+            self.slider_ac_area.setValue(int(float(self.settings.get("ac_min_area", 1.5)) * 100))
+            self.combo_ac_invert.setCurrentText(self.settings.get("ac_invert", "Automático"))
+            self.spin_ac_max.setValue(int(self.settings.get("ac_max_crops", 0)))
+            
+            self.chk_ac_custom_bg.setChecked(self.settings.get("ac_use_custom_bg", False))
+            self._safe_set_combo(self.combo_ac_bg_color, self.settings.get("ac_bg_color", "Preto"))
+
+            self.chk_bg_detect.setChecked(self.settings.get("bg_detect_enabled", False))
+            self.slider_bg_sens.setValue(int(self.settings.get("bg_detect_sensitivity", 0)))
+            self._safe_set_combo(self.combo_bg_color, self.settings.get("bg_replace_color", "Preto"))
+
+        # --- Aba Imagens (Formatos e Post) ---
+        if hasattr(self, 'combo_format'):
+            self.combo_format.setCurrentText(self.settings.get("image_format", "JPG"))
+            self.spin_jpg_quality.setValue(int(self.settings.get("jpg_quality", 95)))
+            self.spin_png_compression.setValue(int(self.settings.get("png_compression", 6)))
+            self.combo_tiff_compression.setCurrentText(self.settings.get("tiff_compression", "Sem compressão"))
+            
+            self.slider_post_brightness.setValue(self.settings.get("post_brightness", 0))
+            self.slider_post_contrast.setValue(self.settings.get("post_contrast", 0))
+
+        # --- Aba Marcadores ---
+        if hasattr(self, 'combo_left'):
+            self.combo_left.setCurrentText(self.settings.get("marker_color_left", "Vermelho"))
+            self.combo_right.setCurrentText(self.settings.get("marker_color_right", "Verde"))
+            self._safe_set_combo(self.combo_fill_color, self.settings.get("marker_fill_color", "Transparente"))
+            
+            self.slider_opacity.setValue(int(self.settings.get("marker_opacity", 8)))
+            self.slider_weight.setValue(int(self.settings.get("marker_thickness_weight", 100)))
+            
+            self.spin_border_width.setValue(int(self.settings.get("image_border_width", 1)))
+            self.combo_border_color.setCurrentText(self.settings.get("image_border_color", "Preto"))
+            self.slider_border_opacity.setValue(int(self.settings.get("image_border_opacity", 100)))
+            self.combo_border_style.setCurrentText(self.settings.get("image_border_style", "Contínuo"))
+
+        # --- Aba Orientação ---
+        if hasattr(self, 'combo_rot_left'):
+            self.combo_rot_left.setCurrentText(self.settings.get("rotation_left", "0°"))
+            self.combo_rot_right.setCurrentText(self.settings.get("rotation_right", "0°"))
+
+        # --- Aba Processar ---
+        if hasattr(self, 'chk_crop'):
+            self.chk_crop.setChecked(self.settings.get("proc_crop", True))
+            self.chk_contour_deskew.setChecked(self.settings.get("proc_contour_deskew", False))
+            self.chk_deskew.setChecked(self.settings.get("proc_deskew", True))
+            self.chk_dewarp.setChecked(self.settings.get("proc_dewarp", False))
+            self.chk_pdf.setChecked(self.settings.get("proc_pdf", True))
+            self.chk_ignore_ends.setChecked(self.settings.get("ignore_ends", False))
+            
+            self.slider_deskew_agg.setValue(int(self.settings.get("deskew_aggressiveness", 1.0) * 100))
+            self.slider_dewarp_agg.setValue(int(self.settings.get("dewarp_aggressiveness", 1.0) * 100))
+            
+            pdf_src = self.settings.get("pdf_source", "tratadas")
+            if pdf_src == "entrada": self.rb_entrada.setChecked(True)
+            elif pdf_src == "originais": self.rb_originais.setChecked(True)
+            else: self.rb_tratadas.setChecked(True)
+            
+            self.chk_cleanup.setChecked(self.settings.get("cleanup_after_export", False))
+
+        # --- Aba OCR ---
+        if hasattr(self, 'chk_proc_ocr'):
+            self.chk_proc_ocr.setChecked(self.settings.get("proc_ocr", False))
+            self.chk_ocr_preprocess.setChecked(self.settings.get("ocr_preprocess", True))
+            self.chk_manual_opencv.setChecked(self.settings.get("manual_opencv_configs", False))
+            self.slider_cor_papel.setValue(self.settings.get("ocr_cor_papel", 20))
+            self.slider_int_impr.setValue(self.settings.get("ocr_int_impressao", 80))
+            self.slider_tam_manchas.setValue(self.settings.get("ocr_tam_manchas", 10))
+            self.slider_prof_manchas.setValue(self.settings.get("ocr_prof_manchas", 0))
+            self.combo_ocr_lang.setCurrentText(self.settings.get("ocr_lang", "por+eng"))
+            self.spin_ocr_jobs.setValue(int(self.settings.get("ocr_jobs", 2)))
+            self.chk_ocr_sidecar.setChecked(self.settings.get("ocr_sidecar", False))
+
+        # --- Aba Custódia ---
+        if hasattr(self, 'chk_hash_capture'):
+            self.chk_hash_capture.setChecked(self.settings.get("custody_calc_hash_on_capture", False))
+            self.chk_premis.setChecked(self.settings.get("custody_log_premis", True))
+            self.chk_bagit.setChecked(self.settings.get("custody_export_bagit", False))
+            self.chk_tsv.setChecked(self.settings.get("custody_export_tsv", False))
+            self.chk_tsv_hash.setChecked(self.settings.get("custody_tsv_include_hash", False))
+            self.chk_tsv_ocr.setChecked(self.settings.get("custody_tsv_include_ocr", False))
+            self.combo_tsv_granularity.setCurrentText(self.settings.get("custody_tsv_granularity", "2. Registo por Imagem (Ao nível da Página)"))
+
+        # --- Aba Calibração (Optuna) ---
+        if hasattr(self, 'spin_opt_sessions'):
+            self.spin_opt_sessions.setValue(int(self.settings.get("optuna_sessions", 3)))
+            self.spin_opt_samples.setValue(int(self.settings.get("optuna_samples", 3)))
+            self.chk_opt_crop.setChecked(self.settings.get("optuna_target_crop", True))
+            self.chk_opt_ocr.setChecked(self.settings.get("optuna_target_ocr", True))
+            
+            saved_trials = self.settings.get("optuna_trials", 150)
+            idx = self.combo_opt_trials.findData(saved_trials)
+            if idx >= 0: self.combo_opt_trials.setCurrentIndex(idx)
+                
     def _on_ac_preset_changed(self, preset_name):
         presets = {
             # Formato: [blur, dilate, pad (%), min_area (%), invert_mode]
@@ -2220,15 +2357,12 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                     if key not in keys_to_exclude:
                         self.settings[key] = value
                 
-                QtWidgets.QMessageBox.information(
-                    self, "Perfil Carregado",
-                    "O perfil de acervo foi carregado com sucesso!\n\n"
-                    "O seu projeto atual e as pastas de destino foram mantidos intactos. "
-                    "O sistema aplicará as configurações agora."
-                )
+                # ---> NOVA LÓGICA: Sincroniza a memória com a interface sem fechar a janela
+                self._sync_settings_to_ui()
                 
-                # Salvar no disco e forçar o fechamento (reload) para atualizar a interface central
-                save_settings(self.settings)
-                self.settings_saved.emit(self.settings, self.current_tab_name)
-                self.accept()    
+                QtWidgets.QMessageBox.information(
+                    self, "Perfil Carregado (Modo de Revisão)",
+                    "O perfil de acervo foi carregado na interface!\n\n"
+                    "As novas configurações já estão visíveis nas abas. Revise os valores e clique em 'Aplicar' para efetivar as mudanças."
+                )  
         

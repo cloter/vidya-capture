@@ -11,21 +11,27 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 
 # ---> VARIÁVEL GLOBAL DE pip3 install pytesseract
 # (Atualizada por script externo de controle de versão)
-VIDYA_VERSION = "0.2.41"
+VIDYA_VERSION = "0.2.50"
 VIDYA_AUTHOR = "Cloter Migiorini Fiho"
 # Injeta no ambiente para leitura em qualquer arquivo via: os.getenv("VIDYA_VERSION")
 os.environ["VIDYA_VERSION"] = VIDYA_VERSION 
+
+# ---> FORÇAR TEMA DO UBUNTU/GNOME PARA CARREGAR OS ÍCONES CORRETAMENTE (CONDICIONAL) <---
+if "force_gtk3" in sys.argv:
+    os.environ["QT_QPA_PLATFORMTHEME"] = "gtk3"
+    sys.argv.remove("force_gtk3") # Removemos da lista para não confundir o motor nativo do PyQt5
 
 # ---> INÍCIO DA INSERÇÃO: TELA DE CARREGAMENTO (SPLASH SCREEN) <---
 # Instancia a aplicação GUI nativa mais cedo para desenhar a tela de loading
 app_instance = QtWidgets.QApplication.instance()
 if not app_instance:
     app_instance = QtWidgets.QApplication(sys.argv)
-
+    
 class VidyaSplashScreen(QtWidgets.QSplashScreen):
     def __init__(self):
         pixmap = QtGui.QPixmap(600, 380)
         pixmap.fill(QtCore.Qt.white) # Fundo branco
+        
         super().__init__(pixmap, QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.FramelessWindowHint)
         
         self.wait_for_esc = False # <--- NOVO: Controla se deve reter a tela até o ESC
