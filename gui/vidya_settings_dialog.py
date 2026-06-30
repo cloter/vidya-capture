@@ -1011,6 +1011,23 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             saved_trials = self.settings.get("optuna_trials", 150)
             idx = self.combo_opt_trials.findData(saved_trials)
             if idx >= 0: self.combo_opt_trials.setCurrentIndex(idx)
+            
+            # ---> INÍCIO DA CORREÇÃO: Sincronizar as labels da IA na tela
+            if hasattr(self, 'lbl_ai_blur'):
+                val_blur = self.settings.get("ac_blur", 11)
+                val_dilate = self.settings.get("ac_dilate", 2)
+                val_denoise = self.settings.get("ocr_denoise_h", 0.0)
+                val_clahe = self.settings.get("ocr_clahe_clip", 1.0)
+                val_block = self.settings.get("ocr_block_size", 11)
+                val_c = self.settings.get("ocr_c_val", 2)
+
+                self.lbl_ai_blur.setText(f"Crop-Blur: {val_blur}  ")
+                self.lbl_ai_dilate.setText(f"Crop-Dilate: {val_dilate}  ")
+                self.lbl_ai_denoise.setText(f"Denoise: {val_denoise:.2f}  ")
+                self.lbl_ai_clahe.setText(f"CLAHE: {val_clahe:.2f}  ")
+                self.lbl_ai_block.setText(f"Bloco: {val_block}  ")
+                self.lbl_ai_c.setText(f"Valor C: {val_c}  ")
+            # ---> FIM DA CORREÇÃO
                 
     def _on_ac_preset_changed(self, preset_name):
         presets = {

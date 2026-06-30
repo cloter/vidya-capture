@@ -89,7 +89,7 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         self._THUMB_MAX_W  = 400   
         self._VIEW_BASE_W  = 380   
         self._VIEW_ABS_MIN = 260
-        self._BUTTONS_MIN_W = 800
+        self._BUTTONS_MIN_W = 820
         
         self.is_single_mode = False  
         self.is_reviewing = False
@@ -128,7 +128,7 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         self.is_single_mode = is_single_mode
         
         self._THUMB_MIN_W = 130 if is_single_mode else 160
-        self._BUTTONS_MIN_W = 660 if is_single_mode else 800 
+        self._BUTTONS_MIN_W = 660 if is_single_mode else 820 
         
         if hasattr(self, 'thumbnail_panel'):
             self.thumbnail_panel.setMinimumWidth(self._THUMB_MIN_W)
