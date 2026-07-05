@@ -5,6 +5,8 @@ import glob # <--- ADICIONAR ESTA LINHA
 from PyQt5 import QtWidgets, QtCore, QtGui
 from core.config import COLOR_MAP
 from core.logger import get_logger
+# Arquivo: gui/vidya_thumbnail_panel.py (Seção de importações no topo)
+from core.project_manager import VidyaTransformationWorker
 
 logger = get_logger("ThumbnailPanel")
 
@@ -14,6 +16,8 @@ class VidyaThumbnailPanel(QtWidgets.QListWidget):
     delete_item_requested = QtCore.pyqtSignal(str) # <--- ADICIONAR
     rebuild_finished = QtCore.pyqtSignal()         # <--- ADICIONAR
     auto_crop_requested = QtCore.pyqtSignal(list) # <--- ADICIONE ESTA LINHA
+    # ---> ADICIONE ESTA LINHA: Sinalizador de transformação concluída
+    image_physically_transformed = QtCore.pyqtSignal(str)
 
     def __init__(self, settings_ref: dict):
         super().__init__()
@@ -531,12 +535,92 @@ class VidyaThumbnailPanel(QtWidgets.QListWidget):
         menu.addSeparator()
         action_rebuild = menu.addAction(QtGui.QIcon.fromTheme("view-refresh"), "Reconstruir miniaturas (.thumbnails)")
         
+        # ---> INÍCIO DA INSERÇÃO: Sub-menu de transformações geométricas permanentes
+        menu.addSeparator()
+        trans_menu = menu.addMenu(QtGui.QIcon.fromTheme("object-rotate-right"), "Transformações Físicas (Imagem Original)")
+        act_mirror_h = trans_menu.addAction("Espelhar Imagem Horizontalmente")
+        act_mirror_v = trans_menu.addAction("Espelhar Imagem Verticalmente")
+        act_rotate_cw = trans_menu.addAction("Girar Imagem 90º Horário")
+        act_rotate_ccw = trans_menu.addAction("Girar Imagem 90º Anti-horário")
+        act_rotate_180 = trans_menu.addAction("Girar Imagem 180º")
+        # ---> FIM DA INSERÇÃO
+        
         action = menu.exec_(self.mapToGlobal(event.pos()))
         
         if action == action_del:
             self.delete_item_requested.emit(file_path)
         elif action == action_rebuild:
             self._start_rebuild_worker()
+
+        elif action in [act_mirror_h, act_mirror_v, act_rotate_cw, act_rotate_ccw, act_rotate_180]:
+            warn_text = (
+                "<b>ATENÇÃO:</b> Esta operação vai alterar a imagem original definitivamente no disco rígido.<br><br>"
+                "Se existir alguma necessidade de manter a imagem original intacta, "
+                "esta operação <u>não deverá ser executada</u>.<br><br>"
+                "Todos os recortes extras secundários e alinhamentos manuais aplicados a esta imagem "
+                "serão removidos para manter a integridade visual.<br><br>"
+                "Deseja prosseguir com a alteração do arquivo físico?"
+            )
+            reply = QtWidgets.QMessageBox.warning(
+                self, "Aviso Crítico de Alteração Física", warn_text,
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No
+            )
+            
+            if reply == QtWidgets.QMessageBox.Yes:
+                t_type = None
+                if action == act_mirror_h: t_type = 'mirror_h'
+                elif action == act_mirror_v: t_type = 'mirror_v'
+                elif action == act_rotate_cw: t_type = 'rotate_90_cw'
+                elif action == act_rotate_ccw: t_type = 'rotate_90_ccw'
+                elif action == act_rotate_180: t_type = 'rotate_180'
+                
+                # 1. Cria a barra de progresso modal (Atribuída ao 'self' para evitar o Garbage Collector do Python)
+                self._progress_dialog = QtWidgets.QProgressDialog("Inicializando processador...", None, 0, 100, self)
+                self._progress_dialog.setWindowTitle("Processamento Geométrico")
+                self._progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
+                self._progress_dialog.setMinimumDuration(0)
+                self._progress_dialog.setValue(0)
+                
+                # REMOVIDO: O botão Cancelar. Uma operação de I/O físico não deve ser interrompida 
+                # para não corromper a imagem ou quebrar a cadeia de custódia do project.json.
+                self._progress_dialog.setCancelButton(None) 
+                self._progress_dialog.show()
+                
+                # 2. Instancia a Thread de background
+                self._trans_worker = VidyaTransformationWorker(file_path, t_type, self.settings)
+                
+                # 3. Conecta o sinal dinâmico usando a variável persistente
+                self._trans_worker.progress.connect(
+                    lambda val, txt: (self._progress_dialog.setValue(val), self._progress_dialog.setLabelText(txt))
+                )
+                
+                # 4. Lógica de fecho síncrono
+                def on_transformation_finished(success, path):
+                    self._progress_dialog.close()
+                    if success:
+                        # Purga a miniatura em cache antiga (.thumbnails) para forçar o redesenho
+                        name_no_ext = os.path.basename(path).rsplit('.', 1)[0]
+                        thumb_path = os.path.join(os.path.dirname(path), ".thumbnails", f"{name_no_ext}.jpg")
+                        if os.path.exists(thumb_path):
+                            try: os.remove(thumb_path)
+                            except Exception: pass
+                        
+                        # Recalcula a miniatura local na ListWidget
+                        self.add_thumbnail(path)
+                        
+                        # Dispara o sinal mestre para a Janela Principal recarregar o visor central
+                        self.image_physically_transformed.emit(path)
+                    else:
+                        QtWidgets.QMessageBox.critical(
+                            self, "Erro de I/O", 
+                            f"Falha crítica ao tentar reescrever a imagem:\n{os.path.basename(path)}"
+                        )
+                
+                self._trans_worker.finished.connect(on_transformation_finished)
+                
+                # Inicia a execução assíncrona com segurança
+                self._trans_worker.start()
+        
         elif action == action_autocrop:
             paths_to_process = []
             

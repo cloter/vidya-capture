@@ -124,6 +124,34 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         self._setup_ui()
         self._apply_theme() # -> INSERIR ESTA LINHA NO FINAL DO INIT
 
+    # ---> ADICIONE ESTE MÉTODO COMPLETO EM VidyaMainWindow (Junto aos slots de eventos)
+    def _on_image_physically_transformed(self, file_path: str):
+        """
+        Slot acionado quando uma imagem sofre alterações geométricas diretas no disco.
+        Limpa os históricos de Undo locais para evitar incompatibilidade matemática e força o reload.
+        """
+        # 1. Identifica a posição do marcador manipulado
+        position = "Right" if "Right" in os.path.basename(file_path) else "Left"
+        
+        # 2. Reseta o gerenciador de Undo específico para impedir reversão para coordenadas defasadas
+        if hasattr(self, 'undo_manager'):
+            self.undo_manager.clear(position)
+            
+        # 3. Se a imagem modificada for a que está atualmente aberta no visor de edição, recarrega a cena
+        if self.is_reviewing:
+            is_active = (getattr(self, 'review_left_path', None) == file_path or 
+                         getattr(self, 'review_right_path', None) == file_path)
+            if is_active:
+                # Remove os polígonos filhos da tela gráfica (clips antigos)
+                self._clear_clips()
+                
+                # Força o recarregamento com a flag 'force_reload=True' para quebrar a trava de drift da View
+                left_p = self.review_left_path
+                right_p = self.review_right_path
+                self.show_review_pair(left_p, right_p, force_reload=True)
+                
+                logger.info(f"Painel gráfico central sincronizado após rotação física de: {os.path.basename(file_path)}")
+
     def apply_project_mode(self, is_single_mode: bool):
         self.is_single_mode = is_single_mode
         
@@ -202,6 +230,9 @@ class VidyaMainWindow(QtWidgets.QMainWindow):
         
         self.thumbnail_panel = VidyaThumbnailPanel(self.settings)
         self.thumbnail_panel.pair_selected.connect(self.show_review_pair)
+        
+        # ---> ADICIONE ESTA LINHA: Interceptador de sincronização pós-transformação
+        self.thumbnail_panel.image_physically_transformed.connect(self._on_image_physically_transformed)
         
         # ---> NOVAS INSERÇÕES:
         self.thumbnail_panel.delete_item_requested.connect(self._on_context_menu_delete)

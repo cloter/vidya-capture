@@ -13,10 +13,171 @@ from core.logger import get_logger
 from core.config import load_settings # <--- NOVO: Leitura de preferências
 import glob
 import hashlib # <--- NOVO: Importação para a Cadeia de Custódia
+from datetime import datetime, timezone
 
 logger = get_logger("ProjectManager")
 single_logger = get_logger("SingleAuditor")
 
+
+# Arquivo: core/project_manager.py (Substituindo a função anterior no topo do ficheiro)
+
+import os
+import json
+import hashlib
+import glob
+from PIL import Image
+from datetime import datetime, timezone
+from PyQt5 import QtCore
+
+class VidyaTransformationWorker(QtCore.QThread):
+    """
+    Worker Thread que executa as transformações físicas em background,
+    emitindo atualizações granulares de progresso para a interface gráfica.
+    """
+    progress = QtCore.pyqtSignal(int, str)
+    finished = QtCore.pyqtSignal(bool, str)
+
+    def __init__(self, image_path: str, transformation_type: str, settings: dict):
+        super().__init__()
+        self.image_path = image_path
+        self.transformation_type = transformation_type
+        self.settings = settings
+
+    def run(self):
+        if not os.path.exists(self.image_path):
+            self.finished.emit(False, self.image_path)
+            return
+
+        try:
+            # 1. Carregamento em Memória
+            self.progress.emit(15, "Carregando imagem original para a RAM...")
+            with Image.open(self.image_path) as PIL_img:
+                PIL_img.load()
+                
+            # 2. Transformação Geométrica
+            self.progress.emit(35, "Aplicando matriz de transformação matemática...")
+            if self.transformation_type == 'mirror_h':
+                transformed_img = PIL_img.transpose(Image.FLIP_LEFT_RIGHT)
+                detail_desc = "Espelhamento Horizontal Físico"
+            elif self.transformation_type == 'mirror_v':
+                transformed_img = PIL_img.transpose(Image.FLIP_TOP_BOTTOM)
+                detail_desc = "Espelhamento Vertical Físico"
+            elif self.transformation_type == 'rotate_90_cw':
+                transformed_img = PIL_img.transpose(Image.ROTATE_270)
+                detail_desc = "Rotação Física de 90° Horária"
+            elif self.transformation_type == 'rotate_90_ccw':
+                transformed_img = PIL_img.transpose(Image.ROTATE_90)
+                detail_desc = "Rotação Física de 90° Anti-horária"
+            elif self.transformation_type == 'rotate_180':
+                transformed_img = PIL_img.transpose(Image.ROTATE_180)
+                detail_desc = "Rotação Física de 180°"
+            else:
+                PIL_img.close()
+                self.finished.emit(False, self.image_path)
+                return
+
+            # 3. Preparação de Compressão e Gravação
+            self.progress.emit(55, "Escrevendo arquivo físico no disco...")
+            fmt = self.settings.get("image_format", "JPG").upper()
+            save_kwargs = {}
+            if fmt == "JPG":
+                save_kwargs["format"] = "JPEG"
+                save_kwargs["quality"] = int(self.settings.get("jpg_quality", 95))
+            elif fmt == "PNG":
+                save_kwargs["format"] = "PNG"
+                save_kwargs["compress_level"] = int(self.settings.get("png_compression", 6))
+            elif fmt == "TIFF":
+                save_kwargs["format"] = "TIFF"
+                comp = self.settings.get("tiff_compression", "Sem compressão")
+                if "LZW" in comp: save_kwargs["compression"] = "tiff_lzw"
+                elif "ZIP" in comp: save_kwargs["compression"] = "tiff_adobe_deflate"
+                elif "JPEG" in comp: save_kwargs["compression"] = "tiff_jpeg"
+            else:
+                ext = os.path.splitext(self.image_path)[1].lower()
+                save_kwargs["format"] = "JPEG" if ext in ['.jpg', '.jpeg'] else ("PNG" if ext == '.png' else "TIFF")
+
+            # ---> CORREÇÃO: Foi removido o 'save_kwargs["optimize"] = True' que causava extrema lentidão
+            
+            # Grava no disco e recolhe novas dimensões instantaneamente
+            transformed_img.save(self.image_path, **save_kwargs)
+            new_w, new_h = transformed_img.size
+            transformed_img.close()
+            PIL_img.close()
+
+            # 4. Recálculo Criptográfico de Fixidez
+            self.progress.emit(75, "Recalculando assinatura digital (Hash SHA-256)...")
+            sha256_hash = hashlib.sha256()
+            
+            # ---> CORREÇÃO: Leitura alterada de blocos de 64KB para 1MB (1048576 bytes) para acelerar discos lentos
+            with open(self.image_path, "rb") as f:
+                for byte_block in iter(lambda: f.read(1048576), b""):
+                    sha256_hash.update(byte_block)
+            new_hash = sha256_hash.hexdigest()
+
+            # 5. Ajuste Estrito de Metadados Sidecar
+            self.progress.emit(90, "Limpando coordenadas e redefinindo crop principal...")
+            json_path = self.image_path.rsplit('.', 1)[0] + ".json"
+            meta = {}
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        meta = json.load(f)
+                except Exception:
+                    meta = {}
+
+            if "preservation" not in meta:
+                meta["preservation"] = {}
+            meta["preservation"]["sha256_raw_fixity"] = new_hash
+
+            if "manual_deskew" in meta:
+                del meta["manual_deskew"]
+
+            meta["crop_geometry"] = {"x": 0, "y": 0, "width": new_w, "height": new_h}
+
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(meta, f, indent=4, ensure_ascii=False)
+
+            # 6. Limpeza de sub-recortes (Clips)
+            base_dir = os.path.dirname(self.image_path)
+            name_no_ext = os.path.basename(self.image_path).rsplit('.', 1)[0]
+            for clip_file in glob.glob(os.path.join(base_dir, f"{name_no_ext}_clip_*.json")):
+                try: os.remove(clip_file)
+                except Exception: pass
+
+            # 7. Registo na Cadeia de Custódia do Projeto (PREMIS)
+            self.progress.emit(95, "Selando o manifesto arquivístico (project.json)...")
+            working_dir = self.settings.get("working_dir")
+            if working_dir and os.path.exists(working_dir):
+                proj_file = os.path.join(working_dir, "project.json")
+                if os.path.exists(proj_file):
+                    try:
+                        with open(proj_file, 'r', encoding='utf-8') as f:
+                            proj_data = json.load(f)
+                        
+                        if "premis:events" not in proj_data:
+                            proj_data["premis:events"] = []
+                            
+                        evt = {
+                            "eventType": "transformation",
+                            "eventDateTime": datetime.now(timezone.utc).isoformat()[:19] + "Z",
+                            "eventDetail": f"{detail_desc} executado diretamente via painel do operador.",
+                            "linkingAgentIdentifierValue": "Vidya Capture UI-TransformEngine",
+                            "linkingObjectIdentifierValue": os.path.basename(self.image_path),
+                            "resultingObjectHash": new_hash
+                        }
+                        proj_data["premis:events"].append(evt)
+                        
+                        with open(proj_file, 'w', encoding='utf-8') as f:
+                            json.dump(proj_data, f, indent=4, ensure_ascii=False)
+                    except Exception:
+                        pass
+
+            self.progress.emit(100, "Concluído!")
+            self.finished.emit(True, self.image_path)
+        except Exception:
+            self.finished.emit(False, self.image_path)
+        
+        
 # =========================================================================
 # NOVA FUNÇÃO GLOBAL: CÁLCULO DE HASH FÍSICO (ANTI-FRAUDE)
 # =========================================================================
@@ -538,6 +699,26 @@ class LegacyImportWorker(QtCore.QThread):
         
         # ROTACIONAR FISICAMENTE BASEADO NO EXIF
         img = ImageOps.exif_transpose(img)
+
+        # =====================================================================
+        # ---> INÍCIO DA ATUALIZAÇÃO: Rotação Manual pelas Preferências <---
+        # =====================================================================
+        rot_key = "rotation_left" if side == "Left" else "rotation_right"
+        rot_str = self.settings.get(rot_key, "0°")
+        
+        if rot_str != "0°":
+            try:
+                # Extrai apenas o número inteiro da string (ex: "90°" -> 90)
+                angle = int(rot_str.replace("°", "").strip())
+                # No Pillow (PIL), a função .rotate() gira no sentido anti-horário. 
+                # Usamos o valor negativo para rotacionar no sentido horário convencional das UIs.
+                if angle > 0:
+                    img = img.rotate(-angle, expand=True)
+            except Exception as e:
+                logger.error(f"Erro ao aplicar rotação de {rot_str} na imagem {original_file}: {e}")
+        # =====================================================================
+        # ---> FIM DA ATUALIZAÇÃO <---
+        # =====================================================================        
         
         if fmt == "JPG" and img.mode in ("RGBA", "P"): 
             img = img.convert('RGB')

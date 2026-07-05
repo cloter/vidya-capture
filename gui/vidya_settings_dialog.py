@@ -10,7 +10,8 @@ import getpass
 from datetime import datetime
 from core.config import COLOR_MAP, load_settings, save_settings
 from hardware.vidya_v4l2_scanner import V4L2AdvancedScanner
-from gui.vidya_profiles_dialog import VidyaProfilesDialog # <--- INSERIR AQUI
+from gui.vidya_profiles_dialog import VidyaProfilesDialog
+from core.vidya_fisheye_calibration import FisheyeCalibrationWorker
 
 class V4L2AdvancedDialog(QtWidgets.QDialog):
     def __init__(self, scan_data, current_config, parent=None):
@@ -105,8 +106,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self._build_optuna_tab()
         self._build_custody_tab()
         self._build_process_tab()
-        # ---> INSERIR AQUI: Construtor da aba do Optuna
-        
+        self._build_rectify_tab()       
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_save = QtWidgets.QPushButton("Aplicar")
@@ -1005,8 +1005,6 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         if hasattr(self, 'spin_opt_sessions'):
             self.spin_opt_sessions.setValue(int(self.settings.get("optuna_sessions", 3)))
             self.spin_opt_samples.setValue(int(self.settings.get("optuna_samples", 3)))
-            self.chk_opt_crop.setChecked(self.settings.get("optuna_target_crop", True))
-            self.chk_opt_ocr.setChecked(self.settings.get("optuna_target_ocr", True))
             
             saved_trials = self.settings.get("optuna_trials", 150)
             idx = self.combo_opt_trials.findData(saved_trials)
@@ -1014,21 +1012,50 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             
             # ---> INÍCIO DA CORREÇÃO: Sincronizar as labels da IA na tela
             if hasattr(self, 'lbl_ai_blur'):
-                val_blur = self.settings.get("ac_blur", 11)
-                val_dilate = self.settings.get("ac_dilate", 2)
+                # val_blur = self.settings.get("ac_blur", 11)
+                # val_dilate = self.settings.get("ac_dilate", 2)
                 val_denoise = self.settings.get("ocr_denoise_h", 0.0)
                 val_clahe = self.settings.get("ocr_clahe_clip", 1.0)
                 val_block = self.settings.get("ocr_block_size", 11)
                 val_c = self.settings.get("ocr_c_val", 2)
 
-                self.lbl_ai_blur.setText(f"Crop-Blur: {val_blur}  ")
-                self.lbl_ai_dilate.setText(f"Crop-Dilate: {val_dilate}  ")
+                # self.lbl_ai_blur.setText(f"Crop-Blur: {val_blur}  ")
+                # self.lbl_ai_dilate.setText(f"Crop-Dilate: {val_dilate}  ")
                 self.lbl_ai_denoise.setText(f"Denoise: {val_denoise:.2f}  ")
                 self.lbl_ai_clahe.setText(f"CLAHE: {val_clahe:.2f}  ")
                 self.lbl_ai_block.setText(f"Bloco: {val_block}  ")
                 self.lbl_ai_c.setText(f"Valor C: {val_c}  ")
             # ---> FIM DA CORREÇÃO
-                
+
+        # --- Aba Retificar (Fish-eye) ---
+        if hasattr(self, 'chk_use_rectify'):
+            self.chk_use_rectify.setChecked(self.settings.get("use_fisheye_rectification", False))
+            
+            # Sincroniza a lista de strings com as chaves mestres do dicionário pai
+            self.combo_checker_profile.blockSignals(True)
+            self.combo_checker_profile.clear()
+            profiles_db = self.settings.get("fisheye_profiles", {})
+            self.combo_checker_profile.addItems(list(profiles_db.keys()))
+            
+            last_profile = self.settings.get("last_fisheye_profile", "")
+            last_angle = self.settings.get("last_fisheye_angle", 180)
+            
+            if last_profile and self.combo_checker_profile.findText(last_profile) != -1:
+                self.combo_checker_profile.setCurrentText(last_profile)
+            else:
+                if self.combo_checker_profile.count() > 0:
+                    self.combo_checker_profile.setCurrentIndex(0)
+            
+            self.spin_checker_angle.blockSignals(True)
+            self.spin_checker_angle.setValue(last_angle)
+            self.spin_checker_angle.blockSignals(False)
+
+            self.combo_checker_profile.blockSignals(False)
+
+            # Agora sim, dispara uma única vez
+            self._load_rectify_profile_metadata(self.combo_checker_profile.currentText())
+
+                            
     def _on_ac_preset_changed(self, preset_name):
         presets = {
             # Formato: [blur, dilate, pad (%), min_area (%), invert_mode]
@@ -1283,7 +1310,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             }
             
             # ---> INÍCIO DA INSERÇÃO: Sincroniza a memória da IA com o manifesto do projeto <---
-            optuna_keys = ["ac_blur", "ac_dilate", "ac_invert", "ocr_denoise_h", "ocr_clahe_clip", "ocr_block_size", "ocr_c_val"]
+            optuna_keys = ["ac_blur", "ac_dilate", "ac_invert", "ocr_denoise_h", "ocr_clahe_clip", "ocr_block_size", "ocr_c_val", "search_space_mode"]
             optuna_data = {}
             for k in optuna_keys:
                 if k in self.settings:
@@ -1510,7 +1537,335 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                     
         layout.addStretch()
         self.tabs.addTab(tab, "Processar")
+
+    def _build_rectify_tab(self):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
         
+        info_label = QtWidgets.QLabel(
+            "<b>Retificação de Câmeras Fish-eye (Grande Angular)</b><br>"
+            "<small>Gerencie perfis de calibração para remover a distorção de lentes grande angulares "
+            "baseando-se em amostras de tabuleiros de xadrez (checkerboard).</small>"
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        # Controle Mestre
+        self.chk_use_rectify = QtWidgets.QCheckBox("Usar retificação de grande angular")
+        self.chk_use_rectify.setChecked(self.settings.get("use_fisheye_rectification", False))
+        font_chk = self.chk_use_rectify.font()
+        font_chk.setBold(True)
+        self.chk_use_rectify.setFont(font_chk)
+        layout.addWidget(self.chk_use_rectify)
+        
+        # Grupo de Parâmetros
+        self.grp_rectify = QtWidgets.QGroupBox("Parâmetros de Calibração (Checkerboard)")
+        lyt_rectify = QtWidgets.QFormLayout(self.grp_rectify)
+        
+        # Linha do Perfil (Combobox + Botões de Ação)
+        profile_layout = QtWidgets.QHBoxLayout()
+        self.combo_checker_profile = QtWidgets.QComboBox()
+        self.combo_checker_profile.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        
+        btn_new_profile = QtWidgets.QPushButton("Novo")
+        btn_new_profile.setIcon(QtGui.QIcon.fromTheme("list-add"))
+        btn_new_profile.clicked.connect(self._on_new_rectify_profile)
+        
+        btn_del_profile = QtWidgets.QPushButton("Excluir")
+        btn_del_profile.setIcon(QtGui.QIcon.fromTheme("list-remove"))
+        btn_del_profile.clicked.connect(self._on_delete_rectify_profile)
+        
+        profile_layout.addWidget(self.combo_checker_profile)
+        profile_layout.addWidget(btn_new_profile)
+        profile_layout.addWidget(btn_del_profile)
+        
+        self.spin_checker_angle = QtWidgets.QSpinBox()
+        self.spin_checker_angle.setRange(45, 180)
+        self.spin_checker_angle.setSuffix("°")
+        
+        self.spin_checker_x = QtWidgets.QSpinBox()
+        self.spin_checker_x.setRange(2, 20)
+        
+        self.spin_checker_y = QtWidgets.QSpinBox()
+        self.spin_checker_y.setRange(2, 20)
+        
+        self.spin_checker_size = QtWidgets.QSpinBox()
+        self.spin_checker_size.setRange(100, 1000)
+        self.spin_checker_size.setSingleStep(10)
+        self.spin_checker_size.setSuffix(" mm")
+        
+        # Caminho das imagens de calibração
+        path_layout = QtWidgets.QHBoxLayout()
+        self.line_checker_path = QtWidgets.QLineEdit()
+        self.line_checker_path.setReadOnly(True)
+        
+        btn_browse_checker = QtWidgets.QPushButton(" Escolher Pasta...")
+        btn_browse_checker.setIcon(QtGui.QIcon.fromTheme("folder-open"))
+        btn_browse_checker.clicked.connect(self._on_browse_checker_path)
+        
+        path_layout.addWidget(self.line_checker_path)
+        path_layout.addWidget(btn_browse_checker)
+        
+        lyt_rectify.addRow("Perfil de Calibração:", profile_layout)
+        lyt_rectify.addRow("Angular da câmera (Ângulo de visão):", self.spin_checker_angle)
+        lyt_rectify.addRow("Linhas horizontais (Interseções internas):", self.spin_checker_x)
+        lyt_rectify.addRow("Colunas verticais (Interseções internas):", self.spin_checker_y)
+        lyt_rectify.addRow("Tamanho do quadro (Quadrado do xadrez):", self.spin_checker_size)
+        lyt_rectify.addRow("Pasta com imagens de calibração:", path_layout)
+        
+        layout.addWidget(self.grp_rectify)
+        
+        # ---> INSERIR AQUI: Nova área "Controle de Calibração"
+        self.grp_exec_calib = QtWidgets.QGroupBox("Ações de Calibração")
+        lyt_exec_calib = QtWidgets.QVBoxLayout(self.grp_exec_calib)
+        
+        self.lbl_calib_status = QtWidgets.QLabel("Status: Aguardando execução...")
+        self.lbl_calib_status.setStyleSheet("color: #7f8c8d; font-style: italic;")
+        self.lbl_calib_status.setWordWrap(True)
+        
+        # ---> INSERIR AQUI: A barra de progresso
+        self.progress_calib = QtWidgets.QProgressBar()
+        self.progress_calib.setValue(0)
+        self.progress_calib.setVisible(False) # Escondida até o processo começar
+        
+        # ---> CORREÇÃO: Adicionado o prefixo 'self.' no botão
+        self.btn_exec_calib = QtWidgets.QPushButton(" Executar Calibração da Lente")
+        self.btn_exec_calib.setIcon(QtGui.QIcon.fromTheme("system-run"))
+        self.btn_exec_calib.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 6px;")
+        
+        # Conexão com o método que iniciará a Thread
+        self.btn_exec_calib.clicked.connect(self._start_fisheye_calibration)
+        
+        lyt_exec_calib.addWidget(self.lbl_calib_status)
+        lyt_exec_calib.addWidget(self.btn_exec_calib)
+        
+        layout.addWidget(self.grp_exec_calib)
+        
+        # Oculta este grupo se o checkbox mestre de retificação estiver desmarcado
+        self.grp_exec_calib.setEnabled(self.chk_use_rectify.isChecked())
+        self.chk_use_rectify.toggled.connect(self.grp_exec_calib.setEnabled)
+        # ---> FIM DA INSERÇÃO
+                
+        layout.addStretch()
+        
+        # ---> INÍCIO DA CORREÇÃO: Carregar os dados na interface assim que a aba é construída <---
+        profiles_db = self.settings.get("fisheye_profiles", {})
+        self.combo_checker_profile.addItems(list(profiles_db.keys()))
+        
+        last_profile = self.settings.get("last_fisheye_profile", "")
+        last_angle = self.settings.get("last_fisheye_angle", 180)
+        
+        self.combo_checker_profile.blockSignals(True)
+        if last_profile and self.combo_checker_profile.findText(last_profile) != -1:
+            self.combo_checker_profile.setCurrentText(last_profile)
+        elif self.combo_checker_profile.count() > 0:
+            self.combo_checker_profile.setCurrentIndex(0)
+        self.combo_checker_profile.blockSignals(False)
+        
+        self.spin_checker_angle.blockSignals(True)
+        self.spin_checker_angle.setValue(last_angle)
+        self.spin_checker_angle.blockSignals(False)
+        
+        # Força o preenchimento dos campos (X, Y, Size, Path) com base no perfil selecionado acima
+        self._load_rectify_profile_metadata(self.combo_checker_profile.currentText())
+        # ---> FIM DA CORREÇÃO <---
+        
+        # Conexões de monitoramento: Mudou o perfil ou mudou o angular -> recarrega os campos específicos
+        self.combo_checker_profile.currentTextChanged.connect(self._load_rectify_profile_metadata)
+        self.spin_checker_angle.valueChanged.connect(self._on_angle_changed)
+        
+        # Lógica de ativação/desativação visual dependente do Checkbox mestre
+        self.grp_rectify.setEnabled(self.chk_use_rectify.isChecked())
+        self.chk_use_rectify.toggled.connect(self.grp_rectify.setEnabled)
+        
+        self.tabs.addTab(tab, "Retificar")
+
+    # E adicione este método na classe:
+    def _on_angle_changed(self, new_angle):
+        profile_name = self.combo_checker_profile.currentText()
+        if profile_name:
+            # Salva o estado atual da tela na memória temporária ANTES de limpar a interface
+            # Obs: Você precisaria rastrear o "ângulo anterior" para salvar corretamente, 
+            # ou instruir o usuário de que mudanças não aplicadas são perdidas ao navegar.
+            self._load_rectify_profile_metadata(profile_name)
+
+    def _on_new_rectify_profile(self):
+        """Prompt síncrono para criação de uma nova chave de perfil."""
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Novo Perfil de Retificação", 
+            "Digite o nome de identificação para o novo perfil:"
+        )
+        if ok and name.strip():
+            name = name.strip()
+            if self.combo_checker_profile.findText(name) == -1:
+                self.combo_checker_profile.addItem(name)
+            self.combo_checker_profile.setCurrentText(name)
+
+    def _on_delete_rectify_profile(self):
+        """Remove o perfil da memória volátil, apaga os arquivos de calibração do disco e limpa o combobox."""
+        current_profile = self.combo_checker_profile.currentText()
+        if not current_profile:
+            return
+            
+        reply = QtWidgets.QMessageBox.question(
+            self, "Excluir Perfil de Calibração",
+            f"Tem certeza que deseja remover o perfil '{current_profile}' e excluir seus arquivos de calibração permanentemente do disco?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        
+        if reply == QtWidgets.QMessageBox.Yes:
+            profiles_db = self.settings.get("fisheye_profiles", {})
+            if current_profile in profiles_db:
+                
+                # ---> INÍCIO DA EXCLUSÃO FÍSICA DOS ARQUIVOS <---
+                profile_settings = profiles_db[current_profile].get("settings", {})
+                for key, value in profile_settings.items():
+                    # Verifica se o valor armazenado é uma string (caminho) e aponta para um arquivo .npy
+                    if isinstance(value, str) and value.endswith(".npy"):
+                        if os.path.exists(value):
+                            try:
+                                os.remove(value)
+                                print(f"[Vidya] Arquivo de calibração removido com sucesso: {value}")
+                            except Exception as e:
+                                print(f"[Vidya] Erro ao remover arquivo de calibração {value}: {e}")
+                # ---> FIM DA EXCLUSÃO FÍSICA <---
+
+                # Agora sim, apaga o perfil da memória
+                del profiles_db[current_profile]
+                self.settings["fisheye_profiles"] = profiles_db
+            
+            # Remove da interface visual
+            idx = self.combo_checker_profile.currentIndex()
+            self.combo_checker_profile.removeItem(idx)
+            
+            # Atualiza o último perfil usado, se necessário
+            if self.settings.get("last_fisheye_profile") == current_profile:
+                self.settings["last_fisheye_profile"] = self.combo_checker_profile.currentText()
+
+    def _load_rectify_profile_metadata(self, profile_name):
+        """Busca na árvore JSON e popula os widgets para o par Perfil + Angulação."""
+        if not profile_name:
+            self.spin_checker_x.setValue(9)
+            self.spin_checker_y.setValue(6)
+            self.spin_checker_size.setValue(150)
+            self.line_checker_path.setText("")
+            return
+            
+        angle = self.spin_checker_angle.value()
+        angle_key = f"angle_{angle}"
+        profiles_db = self.settings.get("fisheye_profiles", {})
+        
+        # Padrões de Fallback caso o nó ou sub-nó específico não existam
+        val_x, val_y, val_size, val_path = 9, 6, 150, ""
+        
+        if profile_name in profiles_db:
+            cameras_dict = profiles_db[profile_name].get("cameras", {})
+            if angle_key in cameras_dict:
+                config = cameras_dict[angle_key]
+                val_x = config.get("checker_x", 9)
+                val_y = config.get("checker_y", 6)
+                val_size = config.get("checker_size", 150)
+                val_path = config.get("checker_path", "")
+                
+        # Blindagem de Sinais para evitar disparos recursivos durante atualização forçada da UI
+        self.spin_checker_x.blockSignals(True)
+        self.spin_checker_y.blockSignals(True)
+        self.spin_checker_size.blockSignals(True)
+        
+        self.spin_checker_x.setValue(val_x)
+        self.spin_checker_y.setValue(val_y)
+        self.spin_checker_size.setValue(val_size)
+        self.line_checker_path.setText(val_path)
+        
+        self.spin_checker_x.blockSignals(False)
+        self.spin_checker_y.blockSignals(False)
+        self.spin_checker_size.blockSignals(False)
+
+
+    def _start_fisheye_calibration(self):
+        profile_name = self.combo_checker_profile.currentText().strip()
+        images_dir = self.line_checker_path.text().strip()
+        
+        if not profile_name or not images_dir or not os.path.isdir(images_dir):
+            QtWidgets.QMessageBox.warning(self, "Atenção", "Certifique-se de escolher um perfil e uma pasta de imagens válida.")
+            return
+
+        # Trava a interface para evitar cliques acidentais durante o cálculo
+        self.btn_exec_calib.setEnabled(False)
+        self.grp_rectify.setEnabled(False)
+        
+        self.progress_calib.setRange(0, 100)
+        self.progress_calib.setValue(0)
+        self.progress_calib.setVisible(True)
+        
+        # Pega a pasta de instalação para salvar as matrizes (mesmo nível do main.py)
+        # Ajuste "base_install" se a sua pasta raiz do Vidya estiver mapeada de outra forma
+        base_install = os.path.dirname(os.path.abspath(__file__)) 
+        base_install = os.path.dirname(base_install) # Sobe um nível de 'gui' para a raiz
+
+        # Instancia e configura o Worker
+        self.calib_worker = FisheyeCalibrationWorker(
+            profile_name=profile_name,
+            angle=self.spin_checker_angle.value(),
+            checker_x=self.spin_checker_x.value(),
+            checker_y=self.spin_checker_y.value(),
+            square_size=self.spin_checker_size.value(),
+            images_dir=images_dir,
+            base_install_path=base_install
+        )
+        
+        # Conecta os sinais da Thread aos elementos da UI
+        self.calib_worker.progress_text.connect(self.lbl_calib_status.setText)
+        self.calib_worker.progress_value.connect(self._update_calib_progress)
+        self.calib_worker.finished.connect(self._on_fisheye_calibration_finished)
+        
+        # Inicia o processamento em background
+        self.calib_worker.start()
+
+    def _update_calib_progress(self, val):
+        """Se receber -1, a barra entra no modo infinito visual (vai e vem)"""
+        if val == -1:
+            self.progress_calib.setRange(0, 0)
+        else:
+            self.progress_calib.setRange(0, 100)
+            self.progress_calib.setValue(val)
+
+    def _on_fisheye_calibration_finished(self, success, result_data, message):
+        # Destrava a interface
+        self.btn_exec_calib.setEnabled(True)
+        self.grp_rectify.setEnabled(True)
+        self.progress_calib.setVisible(False)
+        self.lbl_calib_status.setText(f"Status: {message}")
+        
+        if success:
+            QtWidgets.QMessageBox.information(self, "Sucesso", message)
+            
+            # Injeta as chaves resultantes dentro de 'settings' no JSON da memória
+            profile_name = self.combo_checker_profile.currentText().strip()
+            
+            if "fisheye_profiles" not in self.settings:
+                self.settings["fisheye_profiles"] = {}
+                
+            if "settings" not in self.settings["fisheye_profiles"][profile_name]:
+                self.settings["fisheye_profiles"][profile_name]["settings"] = {}
+                
+            # Adiciona/Atualiza a matriz calculada ao dicionário dinâmico
+            self.settings["fisheye_profiles"][profile_name]["settings"].update(result_data)
+            
+        else:
+            QtWidgets.QMessageBox.critical(self, "Erro na Calibração", message)
+            
+    def _on_browse_checker_path(self):
+        current_dir = self.line_checker_path.text()
+        selected_dir = QtWidgets.QFileDialog.getExistingDirectory(
+            self, 
+            "Selecionar Pasta com Imagens do Checkerboard", 
+            current_dir, 
+            QtWidgets.QFileDialog.ShowDirsOnly
+        )
+        if selected_dir:
+            self.line_checker_path.setText(selected_dir)
+                    
     def _build_markers_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QFormLayout(tab)
@@ -1902,24 +2257,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_sample.addRow("Total do Ground Truth:", self.lbl_opt_total)
         layout.addWidget(grp_sample)
 
-        # --- GRUPO 2: ALVOS DA OTIMIZAÇÃO ---
-        grp_targets = QtWidgets.QGroupBox("2. Alvos da Otimização")
-        f_targets = grp_targets.font(); f_targets.setBold(True); grp_targets.setFont(f_targets)
-        grp_targets.setStyleSheet("QCheckBox, QLabel { font-weight: normal; }")
-        lyt_targets = QtWidgets.QVBoxLayout(grp_targets)
-
-        self.chk_opt_crop = QtWidgets.QCheckBox("Otimizar Bounding Boxes (Auto-Crop)")
-        self.chk_opt_crop.setChecked(self.settings.get("optuna_target_crop", True))
-        
-        self.chk_opt_ocr = QtWidgets.QCheckBox("Otimizar Matrizes de Binarização (Pré-processamento OCR)")
-        self.chk_opt_ocr.setChecked(self.settings.get("optuna_target_ocr", True))
-
-        lyt_targets.addWidget(self.chk_opt_crop)
-        lyt_targets.addWidget(self.chk_opt_ocr)
-        layout.addWidget(grp_targets)
-
-        # --- GRUPO 3: ESFORÇO DA MÁQUINA ---
-        grp_effort = QtWidgets.QGroupBox("3. Esforço Computacional")
+        # --- GRUPO 2: ESFORÇO DA MÁQUINA (Antigo Grupo 3) ---
+        grp_effort = QtWidgets.QGroupBox("2. Esforço Computacional")
         f_effort = grp_effort.font(); f_effort.setBold(True); grp_effort.setFont(f_effort)
         grp_effort.setStyleSheet("QComboBox, QLabel { font-weight: normal; }")
         lyt_effort = QtWidgets.QFormLayout(grp_effort)
@@ -1930,35 +2269,35 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.combo_opt_trials.addItem("Equilibrado (150 iterações)", 150)
         self.combo_opt_trials.addItem("Profundo (300 iterações)", 300)
         
+        self.combo_opt_trials.setToolTip("Mais iterações geram parâmetros melhores, mas exigem mais tempo de CPU.")
+       
         # Seleciona o salvo ou o Equilibrado como padrão
         saved_trials = self.settings.get("optuna_trials", 150)
         idx = self.combo_opt_trials.findData(saved_trials)
         if idx >= 0: self.combo_opt_trials.setCurrentIndex(idx)
 
-        lbl_effort_info = QtWidgets.QLabel("<small style='color:gray;'>Mais iterações geram parâmetros melhores, mas exigem mais tempo de CPU.</small>")
-        lbl_effort_info.setWordWrap(True)
-
         lyt_effort.addRow("Tentativas da IA (Trials):", self.combo_opt_trials)
-        lyt_effort.addRow("", lbl_effort_info)
         layout.addWidget(grp_effort)
 
-        # --- GRUPO 4: VALORES CALCULADOS PELA IA (MEMÓRIA ATUAL) ---
-        grp_ai_calc = QtWidgets.QGroupBox("4. Valores Otimizados pela IA (Atuais)")
+        # --- GRUPO 3: VALORES CALCULADOS PELA IA (Antigo Grupo 4) ---
+        grp_ai_calc = QtWidgets.QGroupBox("3. Valores Otimizados pela IA (Atuais)")
         f_ai = grp_ai_calc.font(); f_ai.setBold(True); grp_ai_calc.setFont(f_ai)
         grp_ai_calc.setStyleSheet("QLabel { font-weight: normal; }")
         lyt_ai = QtWidgets.QVBoxLayout(grp_ai_calc)
+        
+        # [O restante do código do Grupo Valores Calculados continua intacto abaixo disto...]
 
         # Resgata os últimos valores otimizados salvos (ou os padrões de fábrica)
-        val_blur = self.settings.get("ac_blur", 11)
-        val_dilate = self.settings.get("ac_dilate", 2)
+        # val_blur = self.settings.get("ac_blur", 11)
+        # val_dilate = self.settings.get("ac_dilate", 2)
         val_denoise = self.settings.get("ocr_denoise_h", 0.0)
         val_clahe = self.settings.get("ocr_clahe_clip", 1.0)
         val_block = self.settings.get("ocr_block_size", 11)
         val_c = self.settings.get("ocr_c_val", 2)
 
         # Instanciação das labels contendo Nome: Valor
-        self.lbl_ai_blur = QtWidgets.QLabel(f"Crop-Blur: {val_blur}  ")
-        self.lbl_ai_dilate = QtWidgets.QLabel(f"Crop-Dilate: {val_dilate}  ")
+        # self.lbl_ai_blur = QtWidgets.QLabel(f"Crop-Blur: {val_blur}  ")
+        # self.lbl_ai_dilate = QtWidgets.QLabel(f"Crop-Dilate: {val_dilate}  ")
         self.lbl_ai_denoise = QtWidgets.QLabel(f"Denoise: {val_denoise:.2f}  ")
         self.lbl_ai_clahe = QtWidgets.QLabel(f"CLAHE: {val_clahe:.2f}  ")
         self.lbl_ai_block = QtWidgets.QLabel(f"Bloco: {val_block}  ")
@@ -1966,14 +2305,14 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
 
         # Aplica o mesmo estilo azul monoespaçado da aba OCR
         calc_style = "color: #2980b9; font-family: monospace; font-weight: bold; font-size: 10pt;"
-        for lbl in [self.lbl_ai_blur, self.lbl_ai_dilate, self.lbl_ai_denoise, self.lbl_ai_clahe, self.lbl_ai_block, self.lbl_ai_c]:
+        for lbl in [self.lbl_ai_denoise, self.lbl_ai_clahe, self.lbl_ai_block, self.lbl_ai_c]:
             lbl.setStyleSheet(calc_style)
 
         # Alinhamento horizontal garantindo que todos fiquem na mesma linha
         lyt_ai_row = QtWidgets.QHBoxLayout()
         lyt_ai_row.setContentsMargins(0, 5, 0, 0)
-        lyt_ai_row.addWidget(self.lbl_ai_blur)
-        lyt_ai_row.addWidget(self.lbl_ai_dilate)
+        # lyt_ai_row.addWidget(self.lbl_ai_blur)
+        # lyt_ai_row.addWidget(self.lbl_ai_dilate)
         lyt_ai_row.addWidget(self.lbl_ai_denoise)
         lyt_ai_row.addWidget(self.lbl_ai_clahe)
         lyt_ai_row.addWidget(self.lbl_ai_block)
@@ -1982,6 +2321,27 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
 
         lyt_ai.addLayout(lyt_ai_row)
         layout.addWidget(grp_ai_calc)
+        
+        # --- GRUPO 4: MODO DE OPERAÇÃO (ESPAÇO DE BUSCA) ---
+        grp_mode = QtWidgets.QGroupBox("4. Modo de Operação")
+        f_mode = grp_mode.font(); f_mode.setBold(True); grp_mode.setFont(f_mode)
+        grp_mode.setStyleSheet("QComboBox, QLabel { font-weight: normal; }")
+        lyt_mode = QtWidgets.QFormLayout(grp_mode)
+
+        self.combo_opt_mode = QtWidgets.QComboBox()
+        self.combo_opt_mode.addItems(["Básico", "Avançado"])
+        
+        # Resgata o valor salvo (padrão é Básico)
+        saved_mode = self.settings.get("search_space_mode", "Básico")
+        self.combo_opt_mode.setCurrentText(saved_mode)
+
+        lbl_mode_info = QtWidgets.QLabel("<small style='color:gray;'><b>Básico:</b> Otimiza apenas 4 parâmetros (Mais rápido e seguro, ideal para a maioria dos casos).<br><b>Avançado:</b> Otimiza até 12 parâmetros, incluindo resizing e morfologia (Experimental, exige mais CPU).</small>")
+        lbl_mode_info.setWordWrap(True)
+
+        lyt_mode.addRow("Complexidade da IA:", self.combo_opt_mode)
+        lyt_mode.addRow("", lbl_mode_info)
+        
+        layout.addWidget(grp_mode)
         
         # --- BOTÃO DE AÇÃO ---
         btn_layout = QtWidgets.QHBoxLayout()
@@ -2009,24 +2369,19 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         y = self.spin_opt_samples.value()
         total = x * y
         self.lbl_opt_total.setText(f"{total} imagens serão sorteadas")
-        
-        # Desabilita o botão se o utilizador inventar de desmarcar tudo
-        has_target = self.chk_opt_crop.isChecked() or self.chk_opt_ocr.isChecked()
-        self.btn_start_optuna.setEnabled(has_target)
+        self.btn_start_optuna.setEnabled(True)
 
     def _on_start_optuna_clicked(self):
         """Salva as configurações atuais e emite o sinal para abrir a GUI de marcação."""
-        if not self.chk_opt_crop.isChecked() and not self.chk_opt_ocr.isChecked():
-            QtWidgets.QMessageBox.warning(self, "Aviso", "Selecione pelo menos um Alvo de Otimização (Crop ou OCR).")
-            return
-
-        # Monta o dicionário de configuração da calibração
+        
+        # Monta o dicionário de configuração da calibração fixando os alvos nos bastidores
         calibration_config = {
             "sessions": self.spin_opt_sessions.value(),
             "samples": self.spin_opt_samples.value(),
-            "target_crop": self.chk_opt_crop.isChecked(),
-            "target_ocr": self.chk_opt_ocr.isChecked(),
-            "trials": self.combo_opt_trials.currentData()
+            "target_crop": False,  # <--- Fixado para não otimizar crop
+            "target_ocr": True,    # <--- Fixado para focar sempre no OCR
+            "trials": self.combo_opt_trials.currentData(),
+            "search_space_mode": self.combo_opt_mode.currentText() # <--- ADICIONAR ESTA LINHA
         }
 
         # Salva o estado provisório na memória antes de fechar a janela
@@ -2035,6 +2390,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.settings["optuna_target_crop"] = calibration_config["target_crop"]
         self.settings["optuna_target_ocr"] = calibration_config["target_ocr"]
         self.settings["optuna_trials"] = calibration_config["trials"]
+        self.settings["search_space_mode"] = calibration_config["search_space_mode"] # <--- ADICIONAR ESTA LINHA
 
         # Como esta ação interrompe o fluxo normal (não é apenas 'Aplicar'), 
         # acionamos a rotina padrão de salvar tudo e emitimos o sinal que abrirá a GUI do Optuna.
@@ -2090,7 +2446,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_calc.addWidget(self.lbl_calc_expansao)
         lyt_calc.addWidget(self.lbl_calc_bloco)
         lyt_calc.addWidget(self.lbl_calc_valor_c)
-
+        
         wdg_calc_container = QtWidgets.QWidget()
         wdg_calc_container.setLayout(lyt_calc)
 
@@ -2108,7 +2464,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         lyt_cv2.addRow(QtWidgets.QLabel("Tamanho Manchas<br><span style='%s'>Pequenas (0) → Grandes (100)</span>" % lbl_style), self.slider_tam_manchas)
         lyt_cv2.addRow(QtWidgets.QLabel("Profundidade Manchas<br><span style='%s'>Superficiais (0) → Densas (100)</span>" % lbl_style), self.slider_prof_manchas)
         
-        lyt_cv2.addRow("", wdg_calc_container)
+        lyt_cv2.addRow(wdg_calc_container)
         
         # 2. INSERÇÃO: Checkbox de Força Manual totalmente alinhado à esquerda
         self.chk_manual_opencv = QtWidgets.QCheckBox("Forçar o OpenCV usar estes valores")
@@ -2335,9 +2691,46 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         if hasattr(self, 'spin_opt_sessions'):
             self.settings["optuna_sessions"] = self.spin_opt_sessions.value()
             self.settings["optuna_samples"] = self.spin_opt_samples.value()
-            self.settings["optuna_target_crop"] = self.chk_opt_crop.isChecked()
-            self.settings["optuna_target_ocr"] = self.chk_opt_ocr.isChecked()
+            self.settings["optuna_target_crop"] = False
+            self.settings["optuna_target_ocr"] = True
             self.settings["optuna_trials"] = self.combo_opt_trials.currentData()
+            
+            # ---> ADICIONAR ESTA LINHA:
+            if hasattr(self, 'combo_opt_mode'):
+                self.settings["search_space_mode"] = self.combo_opt_mode.currentText()
+                self.combo_opt_mode.setCurrentText(self.settings.get("search_space_mode", "Básico"))
+        
+        # --- Salvar dados da aba Retificar (Fish-eye) ---
+        if hasattr(self, 'chk_use_rectify'):
+            use_rectify = self.chk_use_rectify.isChecked()
+            self.settings["use_fisheye_rectification"] = use_rectify
+            
+            profile_name = self.combo_checker_profile.currentText().strip()
+            if profile_name:
+                angle = self.spin_checker_angle.value()
+                angle_key = f"angle_{angle}"
+                
+                # Armazena referências rápidas para a reabertura do diálogo
+                self.settings["last_fisheye_profile"] = profile_name
+                self.settings["last_fisheye_angle"] = angle
+                
+                # Inicialização segura da árvore hierárquica
+                if "fisheye_profiles" not in self.settings:
+                    self.settings["fisheye_profiles"] = {}
+                    
+                if profile_name not in self.settings["fisheye_profiles"]:
+                    self.settings["fisheye_profiles"][profile_name] = {
+                        "cameras": {},
+                        "settings": {}
+                    }
+                    
+                # Injeção modular dos metadados sob o nó dinâmico do angular
+                self.settings["fisheye_profiles"][profile_name]["cameras"][angle_key] = {
+                    "checker_x": self.spin_checker_x.value(),
+                    "checker_y": self.spin_checker_y.value(),
+                    "checker_size": self.spin_checker_size.value(),
+                    "checker_path": self.line_checker_path.text()
+                }
             
         self._save_project_metadata(current_working_dir)
         
