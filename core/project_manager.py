@@ -14,20 +14,12 @@ from core.config import load_settings # <--- NOVO: Leitura de preferências
 import glob
 import hashlib # <--- NOVO: Importação para a Cadeia de Custódia
 from datetime import datetime, timezone
+import cv2
+import numpy as np
 
 logger = get_logger("ProjectManager")
 single_logger = get_logger("SingleAuditor")
 
-
-# Arquivo: core/project_manager.py (Substituindo a função anterior no topo do ficheiro)
-
-import os
-import json
-import hashlib
-import glob
-from PIL import Image
-from datetime import datetime, timezone
-from PyQt5 import QtCore
 
 class VidyaTransformationWorker(QtCore.QThread):
     """
@@ -631,6 +623,49 @@ class LegacyImportWorker(QtCore.QThread):
         self.settings = settings
         self.is_single_mode = (self.settings.get("project_mode") == "Mesa Plana (Câmera Única)")
 
+        # ---> INÍCIO DA INTEGRAÇÃO FISHEYE E SIMULAÇÃO (Pré-cálculo de Mapas) <---
+        self.map1 = None
+        self.map2 = None
+        
+        use_simulated = self.settings.get("use_simulated_rectification", False)
+        use_physical = self.settings.get("use_fisheye_rectification", False)
+        
+        if (use_simulated or use_physical) and self.files:
+            if use_simulated:
+                profile_name = self.settings.get("last_sim_profile", "")
+                sim_db = self.settings.get("fisheye_sim_profiles", {})
+                angle = sim_db.get(profile_name, {}).get("sim_fov", 170)
+                logger_mode = "Simulada"
+            else:
+                profile_name = self.settings.get("last_fisheye_profile", "")
+                angle = self.settings.get("last_fisheye_angle", 180)
+                logger_mode = "Física"
+                
+            profiles_db = self.settings.get("fisheye_profiles", {})
+            
+            if profile_name in profiles_db:
+                profile_settings = profiles_db[profile_name].get("settings", {})
+                k_path = profile_settings.get(f"angle_{angle}_K")
+                d_path = profile_settings.get(f"angle_{angle}_D")
+                
+                # Se os arquivos com as matrizes existirem no disco, carregamos
+                if k_path and d_path and os.path.exists(k_path) and os.path.exists(d_path):
+                    try:
+                        K = np.load(k_path)
+                        D = np.load(d_path)
+                        
+                        teste_img = cv2.imread(self.files[0])
+                        if teste_img is not None:
+                            shape = teste_img.shape[:2] 
+                            
+                            self.map1, self.map2 = cv2.fisheye.initUndistortRectifyMap(
+                                K, D, np.eye(3), K, shape[::-1], cv2.CV_16SC2
+                            )
+                            logger.info(f"[Fisheye] Mapas retificados ({logger_mode} | Perfil: {profile_name} | {angle}°)")
+                    except Exception as e:
+                        logger.error(f"[Fisheye] Erro ao carregar matrizes ou processar mapas. Função desativada. {e}")
+        # ---> FIM DA INTEGRAÇÃO FISHEYE E SIMULAÇÃO <---
+        
     def run(self):
         try:
             # 1. Ordenação Base do Lote
@@ -691,10 +726,53 @@ class LegacyImportWorker(QtCore.QThread):
         out_name = f"Temp_{side}_{current_ts}.{ext}"
         out_path = os.path.join(self.work_dir, out_name)
         
-        img = Image.open(original_file)
+        # =====================================================================
+        # ---> INÍCIO DA ATUALIZAÇÃO DO SANDUÍCHE (OpenCV <-> PIL) <---
+        # =====================================================================
+        exif_dict = {}
+        raw_exif = b''
+        
+        # 1. Abre levemente com o PIL apenas para extrair os metadados (Segurança)
+        try:
+            with Image.open(original_file) as tmp_img:
+                exif_dict = VidyaExifExtractor.extract(tmp_img)
+                raw_exif = tmp_img.info.get('exif', b'')
+        except Exception as e:
+            logger.error(f"Falha ao extrair EXIF nativo de {original_file}: {e}")
+            
+        img = None
+        
+        # 2. Se a Retificação estiver ligada E os mapas estiverem na RAM:
+        if self.map1 is not None and self.map2 is not None:
+            cv_img = cv2.imread(original_file)
+            if cv_img is not None:
+                # 2.1 Aplica a Etapa 4.1 (Remoção da distorção da lente via Remap)
+                cv_img_rect = cv2.remap(
+                    cv_img, self.map1, self.map2, 
+                    interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT
+                )
+                
+                # 2.2 Converte o espaço de cor (BGR do OpenCV para RGB do Pillow)
+                cv_img_rgb = cv2.cvtColor(cv_img_rect, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(cv_img_rgb)
+                
+                # 2.3 Re-injeta os bytes do EXIF original na nova imagem gerada pelo NumPy
+                if raw_exif:
+                    img.info['exif'] = raw_exif
+            else:
+                logger.warning(f"OpenCV falhou ao ler a matriz de {original_file}. Fallback para PIL direto.")
+        
+        # 3. Fallback: Se não usou Fisheye (ou se o OpenCV falhou acima), abre nativamente no PIL
+        if img is None:
+            img = Image.open(original_file)
+        # =====================================================================
+        # ---> FIM DA ATUALIZAÇÃO DO SANDUÍCHE <---
+        # =====================================================================
+        
+        # img = Image.open(original_file)
         
         # ---> NOVA INSERÇÃO: Captura do EXIF antes de manipular a imagem
-        exif_dict = VidyaExifExtractor.extract(img)
+        # exif_dict = VidyaExifExtractor.extract(img)
         # ---> FIM DA INSERÇÃO
         
         # ROTACIONAR FISICAMENTE BASEADO NO EXIF

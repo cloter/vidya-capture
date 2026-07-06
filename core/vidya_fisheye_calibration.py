@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 import glob
 import os
-from PyQt5 import QtCore
+import math # <--- ADICIONADO AQUI
+from PyQt5 import QtCore, QtWidgets, QtGui # <--- ADICIONADO 'QtGui' AQUI
 
 class FisheyeCalibrationWorker(QtCore.QThread):
     progress_text = QtCore.pyqtSignal(str)     # Emite o status em texto
@@ -126,3 +127,78 @@ class FisheyeCalibrationWorker(QtCore.QThread):
 
         except Exception as e:
             self.finished.emit(False, {}, f"Erro inesperado durante a calibração: {str(e)}")
+            
+
+class VidyaFisheyePreviewWindow(QtWidgets.QWidget):
+    """Janela flutuante para pré-visualização em tempo real da retificação fisheye."""
+    def __init__(self, image_path, parent=None):
+        super().__init__(parent)
+        # Configura como janela independente flutuante que fica sempre visível
+        self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.WindowStaysOnTopHint)
+        self.setWindowTitle("Visualização em Tempo Real - Calibração")
+        
+        self.layout = QtWidgets.QVBoxLayout(self)
+        self.layout.setContentsMargins(5, 5, 5, 5)
+        
+        self.lbl_image = QtWidgets.QLabel("A carregar imagem proxy...")
+        self.lbl_image.setAlignment(QtCore.Qt.AlignCenter)
+        self.layout.addWidget(self.lbl_image)
+        
+        # 1. Carrega a imagem original
+        self.original_img = cv2.imread(image_path)
+        if self.original_img is None:
+            self.lbl_image.setText("Erro ao ler o ficheiro de imagem.")
+            return
+            
+        self.orig_h, self.orig_w = self.original_img.shape[:2]
+        
+        # 2. Cria o Proxy para alta performance (Máximo de 800px)
+        max_dim = 800
+        scale = min(max_dim / self.orig_w, max_dim / self.orig_h)
+        
+        if scale < 1.0:
+            self.proxy_img = cv2.resize(self.original_img, (int(self.orig_w * scale), int(self.orig_h * scale)))
+        else:
+            self.proxy_img = self.original_img.copy()
+            
+        self.proxy_h, self.proxy_w = self.proxy_img.shape[:2]
+        self.scale_factor = self.proxy_w / self.orig_w  # Rácio de escala para ajustar o Pan e Tilt
+        
+        # Ajusta o tamanho da janela ao tamanho do proxy
+        self.resize(self.proxy_w + 10, self.proxy_h + 10)
+
+    def update_preview(self, fov_deg, pan_orig, tilt_orig, k1_raw, k2_raw):
+        """Recebe os valores dos sliders, calcula a matriz e atualiza a imagem no ecrã."""
+        if not hasattr(self, 'proxy_img'):
+            return
+            
+        w, h = self.proxy_w, self.proxy_h
+        
+        # Converte as variáveis originais para a escala do proxy
+        pan = pan_orig * self.scale_factor
+        tilt = tilt_orig * self.scale_factor
+        k1 = k1_raw / 1000.0
+        k2 = k2_raw / 1000.0
+        
+        # Matemática
+        cx = (w / 2.0) + pan
+        cy = (h / 2.0) + tilt
+        fov_rad = math.radians(fov_deg)
+        diag_px = math.hypot(w, h)
+        focal_length = diag_px / fov_rad if fov_rad > 0 else diag_px
+        
+        K = np.array([[focal_length, 0, cx], [0, focal_length, cy], [0, 0, 1]], dtype=np.float64)
+        D = np.array([[k1], [k2], [0.0], [0.0]], dtype=np.float64)
+        
+        # Planificação super rápida no proxy
+        map1, map2 = cv2.fisheye.initUndistortRectifyMap(K, D, np.eye(3), K, (w, h), cv2.CV_16SC2)
+        rectified = cv2.remap(self.proxy_img, map1, map2, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+        
+        # Conversão de OpenCV (BGR) para PyQt5 (RGB)
+        rgb_img = cv2.cvtColor(rectified, cv2.COLOR_BGR2RGB)
+        h_img, w_img, ch = rgb_img.shape
+        bytes_per_line = ch * w_img
+        qimg = QtGui.QImage(rgb_img.data, w_img, h_img, bytes_per_line, QtGui.QImage.Format_RGB888)
+        pixmap = QtGui.QPixmap.fromImage(qimg)
+        
+        self.lbl_image.setPixmap(pixmap)

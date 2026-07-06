@@ -11,7 +11,7 @@ from datetime import datetime
 from core.config import COLOR_MAP, load_settings, save_settings
 from hardware.vidya_v4l2_scanner import V4L2AdvancedScanner
 from gui.vidya_profiles_dialog import VidyaProfilesDialog
-from core.vidya_fisheye_calibration import FisheyeCalibrationWorker
+from core.vidya_fisheye_calibration import FisheyeCalibrationWorker, VidyaFisheyePreviewWindow
 
 class V4L2AdvancedDialog(QtWidgets.QDialog):
     def __init__(self, scan_data, current_config, parent=None):
@@ -84,10 +84,21 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.preview_window = None  # <--- INSERIR ESTA LINHA AQUI
         self.setWindowTitle("Preferências - Vidya Capture")
-        self.resize(860, 580) 
+        self.resize(920, 580) 
         self.settings = load_settings()
         self._setup_ui()
+        
+    # ---> INSERIR AQUI: Regras de Exclusividade Mútua <---
+    def _on_use_rectify_toggled(self, checked):
+        if checked and hasattr(self, 'chk_use_simulated'):
+            self.chk_use_simulated.setChecked(False)
+
+    def _on_use_simulated_toggled(self, checked):
+        if checked and hasattr(self, 'chk_use_rectify'):
+            self.chk_use_rectify.setChecked(False)
+    # ------------------------------------------------------
 
     def _setup_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -101,12 +112,13 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self._build_source_tab()    
         self._build_preview_tab()
         self._build_images_tab()
+        self._build_rectify_tab()
+        self._build_simulate_tab() 
         self._build_markers_tab()
         self._build_ocr_tab()
         self._build_optuna_tab()
         self._build_custody_tab()
         self._build_process_tab()
-        self._build_rectify_tab()       
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_save = QtWidgets.QPushButton("Aplicar")
@@ -1054,6 +1066,9 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
 
             # Agora sim, dispara uma única vez
             self._load_rectify_profile_metadata(self.combo_checker_profile.currentText())
+            
+        if hasattr(self, 'chk_use_simulated'):
+            self.chk_use_simulated.setChecked(self.settings.get("use_simulated_rectification", False))
 
                             
     def _on_ac_preset_changed(self, preset_name):
@@ -1678,6 +1693,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.grp_rectify.setEnabled(self.chk_use_rectify.isChecked())
         self.chk_use_rectify.toggled.connect(self.grp_rectify.setEnabled)
         
+        self.chk_use_rectify.toggled.connect(self._on_use_rectify_toggled)
+        
         self.tabs.addTab(tab, "Retificar")
 
     # E adicione este método na classe:
@@ -1865,6 +1882,347 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         )
         if selected_dir:
             self.line_checker_path.setText(selected_dir)
+
+    def _build_simulate_tab(self):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        
+        info_label = QtWidgets.QLabel(
+            "<b>Calibração Simétrica Paramétrica (Simulação)</b><br>"
+            "<small>Ajuste os parâmetros matemáticos da lente visualmente utilizando uma única foto de referência. </small>"
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
+        # ---> INSERIR AQUI: O Checkbox Mestre da Simulação <---
+        self.chk_use_simulated = QtWidgets.QCheckBox("Usar calibração simulada na importação das imagens")
+        self.chk_use_simulated.setChecked(self.settings.get("use_simulated_rectification", False))
+        font_chk_sim = self.chk_use_simulated.font()
+        font_chk_sim.setBold(True)
+        self.chk_use_simulated.setFont(font_chk_sim)
+        layout.addWidget(self.chk_use_simulated)
+        # ------------------------------------------------------
+        
+        # --- ÁREA 1: GESTÃO DE PERFIL ---
+        self.grp_sim_profile = QtWidgets.QGroupBox("1. Perfil de Simulação")
+        lyt_sim_profile = QtWidgets.QFormLayout(self.grp_sim_profile)
+        
+        profile_layout = QtWidgets.QHBoxLayout()
+        self.combo_sim_profile = QtWidgets.QComboBox()
+        self.combo_sim_profile.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        
+        btn_new_sim = QtWidgets.QPushButton("Novo")
+        btn_new_sim.setIcon(QtGui.QIcon.fromTheme("list-add"))
+        btn_new_sim.clicked.connect(self._on_new_sim_profile)
+        
+        btn_del_sim = QtWidgets.QPushButton("Excluir")
+        btn_del_sim.setIcon(QtGui.QIcon.fromTheme("list-remove"))
+        btn_del_sim.clicked.connect(self._on_delete_sim_profile)
+        
+        profile_layout.addWidget(self.combo_sim_profile)
+        profile_layout.addWidget(btn_new_sim)
+        profile_layout.addWidget(btn_del_sim)
+        
+        lyt_sim_profile.addRow("Perfil Ativo:", profile_layout)
+        layout.addWidget(self.grp_sim_profile)
+        
+        # --- ÁREA 2: LABORATÓRIO E IMAGEM DE REFERÊNCIA ---
+        self.grp_sim_lab = QtWidgets.QGroupBox("2. Imagem de Referência (Laboratório)")
+        lyt_sim_lab = QtWidgets.QFormLayout(self.grp_sim_lab)
+        
+        path_layout = QtWidgets.QHBoxLayout()
+        self.line_sim_image = QtWidgets.QLineEdit()
+        self.line_sim_image.setReadOnly(True)
+        self.line_sim_image.setPlaceholderText("Nenhuma imagem selecionada...")
+        
+        btn_browse_sim = QtWidgets.QPushButton(" Abrir Imagem...")
+        btn_browse_sim.setIcon(QtGui.QIcon.fromTheme("image-x-generic"))
+        btn_browse_sim.clicked.connect(self._on_browse_sim_image)
+        
+        path_layout.addWidget(self.line_sim_image)
+        path_layout.addWidget(btn_browse_sim)
+        
+        dim_layout = QtWidgets.QHBoxLayout()
+        self.spin_sim_width = QtWidgets.QSpinBox()
+        self.spin_sim_width.setRange(0, 10000)
+        self.spin_sim_width.setReadOnly(True)
+        self.spin_sim_width.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.spin_sim_width.setSuffix(" px")
+        
+        self.spin_sim_height = QtWidgets.QSpinBox()
+        self.spin_sim_height.setRange(0, 10000)
+        self.spin_sim_height.setReadOnly(True)
+        self.spin_sim_height.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.spin_sim_height.setSuffix(" px")
+        
+        dim_layout.addWidget(QtWidgets.QLabel("Largura:"))
+        dim_layout.addWidget(self.spin_sim_width)
+        dim_layout.addWidget(QtWidgets.QLabel("Altura:"))
+        dim_layout.addWidget(self.spin_sim_height)
+        dim_layout.addStretch()
+        
+        lyt_sim_lab.addRow("Foto de Teste:", path_layout)
+        lyt_sim_lab.addRow("Resolução Detectada:", dim_layout)
+        
+        # lbl_sim_warning = QtWidgets.QLabel("<small style='color: gray;'>A resolução deve corresponder exatamente à resolução real de captura da câmera.</small>")
+        # lyt_sim_lab.addRow("", lbl_sim_warning)
+        
+        layout.addWidget(self.grp_sim_lab)
+        layout.addStretch()
+        
+        # --- ÁREA 3: MATRIZ INTRÍNSECA (GEOMETRIA K) ---
+        self.grp_sim_k = QtWidgets.QGroupBox("3. Geometria Óptica (Matriz K)")
+        lyt_sim_k = QtWidgets.QFormLayout(self.grp_sim_k)
+        
+        def create_sim_slider(min_val, max_val, default_val):
+            s = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+            s.setRange(min_val, max_val)
+            s.setValue(int(default_val))
+            s.setTickPosition(QtWidgets.QSlider.TicksBelow)
+            return s
+            
+        self.slider_sim_fov = create_sim_slider(30, 220, 170)
+        self.slider_sim_pan = create_sim_slider(-500, 500, 0)
+        self.slider_sim_tilt = create_sim_slider(-500, 500, 0)
+        
+        self.lbl_sim_fov = QtWidgets.QLabel(f"{self.slider_sim_fov.value()}°")
+        self.lbl_sim_pan = QtWidgets.QLabel(f"{self.slider_sim_pan.value()} px")
+        self.lbl_sim_tilt = QtWidgets.QLabel(f"{self.slider_sim_tilt.value()} px")
+        
+        self.slider_sim_fov.valueChanged.connect(lambda v: self.lbl_sim_fov.setText(f"{v}°"))
+        self.slider_sim_pan.valueChanged.connect(lambda v: self.lbl_sim_pan.setText(f"{v} px"))
+        self.slider_sim_tilt.valueChanged.connect(lambda v: self.lbl_sim_tilt.setText(f"{v} px"))
+        
+        def wrap_sim_slider(lbl, sld):
+            h = QtWidgets.QHBoxLayout()
+            lbl.setMinimumWidth(55)
+            h.addWidget(lbl)
+            h.addWidget(sld)
+            return h
+
+        lyt_sim_k.addRow("Ângulo Diagonal (FOV):", wrap_sim_slider(self.lbl_sim_fov, self.slider_sim_fov))
+        lyt_sim_k.addRow("Deslocamento X (Pan):", wrap_sim_slider(self.lbl_sim_pan, self.slider_sim_pan))
+        lyt_sim_k.addRow("Deslocamento Y (Tilt):", wrap_sim_slider(self.lbl_sim_tilt, self.slider_sim_tilt))
+        
+        layout.addWidget(self.grp_sim_k)
+        
+        # --- ÁREA 4: MATRIZ DE DISTORÇÃO (D) ---
+        self.grp_sim_d = QtWidgets.QGroupBox("4. Distorção da Lente (Matriz D)")
+        lyt_sim_d = QtWidgets.QFormLayout(self.grp_sim_d)
+        
+        # Sliders multiplicados por 1000 para permitir casas decimais finas (ex: 150 = 0.150)
+        self.slider_sim_k1 = create_sim_slider(-1000, 1000, 0)
+        self.slider_sim_k2 = create_sim_slider(-1000, 1000, 0)
+        
+        self.lbl_sim_k1 = QtWidgets.QLabel(f"{self.slider_sim_k1.value() / 1000.0:.3f}")
+        self.lbl_sim_k2 = QtWidgets.QLabel(f"{self.slider_sim_k2.value() / 1000.0:.3f}")
+        
+        self.slider_sim_k1.valueChanged.connect(lambda v: self.lbl_sim_k1.setText(f"{v / 1000.0:.3f}"))
+        self.slider_sim_k2.valueChanged.connect(lambda v: self.lbl_sim_k2.setText(f"{v / 1000.0:.3f}"))
+        
+        lyt_sim_d.addRow("Curvatura de Barril (k1):", wrap_sim_slider(self.lbl_sim_k1, self.slider_sim_k1))
+        lyt_sim_d.addRow("Refinamento de Borda (k2):", wrap_sim_slider(self.lbl_sim_k2, self.slider_sim_k2))
+        
+        layout.addWidget(self.grp_sim_d)
+        
+        # --- ÁREA 5: AÇÕES ---
+        self.grp_sim_actions = QtWidgets.QGroupBox("5. Execução")
+        lyt_sim_actions = QtWidgets.QHBoxLayout(self.grp_sim_actions)
+        
+        self.btn_sim_preview = QtWidgets.QPushButton("  Preview em Tempo Real")
+        self.btn_sim_preview.setIcon(QtGui.QIcon.fromTheme("video-display"))
+        self.btn_sim_preview.setStyleSheet("background-color: #e67e22; color: white; font-weight: bold; padding: 6px;")
+        
+        self.btn_sim_save = QtWidgets.QPushButton("  Salvar Matrizes Simuladas")
+        self.btn_sim_save.setIcon(QtGui.QIcon.fromTheme("document-save"))
+        self.btn_sim_save.setStyleSheet("background-color: #8e44ad; color: white; font-weight: bold; padding: 6px;")
+        
+        # ---> INSERIR AQUI: Novo Botão de Ajustes de Fábrica <---
+        self.btn_sim_reset = QtWidgets.QPushButton("  Ajustes de Fábrica")
+        self.btn_sim_reset.setIcon(QtGui.QIcon.fromTheme("edit-clear"))
+        self.btn_sim_reset.setStyleSheet("background-color: #7f8c8d; color: white; font-weight: bold; padding: 6px;") # Cor cinzenta
+        
+        # O botão do preview ficará inativo nesta etapa até carregar a imagem.
+        self.btn_sim_preview.setEnabled(False) 
+        self.btn_sim_preview.clicked.connect(self._open_sim_preview_window)
+        self.btn_sim_save.clicked.connect(self._save_simulated_matrices)
+        self.btn_sim_reset.clicked.connect(self._reset_sim_defaults) # Conecta à função de reset
+        
+        lyt_sim_actions.addWidget(self.btn_sim_preview)
+        lyt_sim_actions.addWidget(self.btn_sim_save)
+        lyt_sim_actions.addWidget(self.btn_sim_reset) # Adiciona à mesma linha
+        
+        layout.addWidget(self.grp_sim_actions)
+        
+        # Carregamento Inicial
+        sim_db = self.settings.get("fisheye_sim_profiles", {})
+        self.combo_sim_profile.addItems(list(sim_db.keys()))
+        
+        last_sim_profile = self.settings.get("last_sim_profile", "")
+        if last_sim_profile and self.combo_sim_profile.findText(last_sim_profile) != -1:
+            self.combo_sim_profile.setCurrentText(last_sim_profile)
+            
+        self._load_sim_profile_data(self.combo_sim_profile.currentText())
+        self.combo_sim_profile.currentTextChanged.connect(self._load_sim_profile_data)
+        
+        # ---> INSERIR AQUI: Lógica visual dependente do Checkbox mestre <---
+        self.grp_sim_profile.setEnabled(self.chk_use_simulated.isChecked())
+        self.grp_sim_lab.setEnabled(self.chk_use_simulated.isChecked())
+        self.grp_sim_k.setEnabled(self.chk_use_simulated.isChecked())
+        self.grp_sim_d.setEnabled(self.chk_use_simulated.isChecked())
+        self.grp_sim_actions.setEnabled(self.chk_use_simulated.isChecked())
+        
+        self.chk_use_simulated.toggled.connect(self.grp_sim_profile.setEnabled)
+        self.chk_use_simulated.toggled.connect(self.grp_sim_lab.setEnabled)
+        self.chk_use_simulated.toggled.connect(self.grp_sim_k.setEnabled)
+        self.chk_use_simulated.toggled.connect(self.grp_sim_d.setEnabled)
+        self.chk_use_simulated.toggled.connect(self.grp_sim_actions.setEnabled)
+        
+        self.chk_use_simulated.toggled.connect(self._on_use_simulated_toggled) # Liga exclusividade mútua
+        # ------------------------------------------------------------------
+        
+        self.tabs.addTab(tab, "Simular")
+
+    def _reset_sim_defaults(self):
+        """Restaura os valores matemáticos originais da simulação sem remover a imagem de teste."""
+        if hasattr(self, 'slider_sim_fov'):
+            # O setValue() aciona automaticamente o signal 'valueChanged', 
+            # o que atualiza os rótulos de texto e a janela de preview em tempo real.
+            self.slider_sim_fov.setValue(170)
+            self.slider_sim_pan.setValue(0)
+            self.slider_sim_tilt.setValue(0)
+            self.slider_sim_k1.setValue(0)
+            self.slider_sim_k2.setValue(0)
+            
+    def _on_new_sim_profile(self):
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Novo Perfil Simulado", 
+            "Digite o nome para este perfil de simulação de lente:"
+        )
+        if ok and name.strip():
+            name = name.strip()
+            if self.combo_sim_profile.findText(name) == -1:
+                self.combo_sim_profile.addItem(name)
+            self.combo_sim_profile.setCurrentText(name)
+
+    def _on_delete_sim_profile(self):
+        current = self.combo_sim_profile.currentText()
+        if not current: return
+            
+        reply = QtWidgets.QMessageBox.question(
+            self, "Excluir Perfil Simulado", 
+            f"Tem certeza que deseja remover o perfil de simulação '{current}' e apagar seus arquivos físicos (.npy)?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            # 1. Remove da memória de Simulação (Sliders)
+            sim_db = self.settings.get("fisheye_sim_profiles", {})
+            if current in sim_db:
+                del sim_db[current]
+                self.settings["fisheye_sim_profiles"] = sim_db
+
+            # 2. Localiza o "clone" na memória principal, exclui os arquivos físicos e a chave
+            profiles_db = self.settings.get("fisheye_profiles", {})
+            if current in profiles_db:
+                profile_settings = profiles_db[current].get("settings", {})
+                for key, value in profile_settings.items():
+                    if isinstance(value, str) and value.endswith(".npy"):
+                        if os.path.exists(value):
+                            try:
+                                os.remove(value)
+                                print(f"[Vidya] Arquivo de simulação removido: {value}")
+                            except Exception as e:
+                                print(f"[Vidya] Erro ao remover arquivo {value}: {e}")
+                
+                # Apaga a chave injetada da árvore principal
+                del profiles_db[current]
+                self.settings["fisheye_profiles"] = profiles_db
+
+            # 3. Limpa a Interface Visual
+            self.combo_sim_profile.removeItem(self.combo_sim_profile.currentIndex())
+            self.line_sim_image.clear()
+            self.spin_sim_width.setValue(0)
+            self.spin_sim_height.setValue(0)
+
+    def _load_sim_profile_data(self, profile_name):
+        if not profile_name: return
+        sim_db = self.settings.get("fisheye_sim_profiles", {})
+        data = sim_db.get(profile_name, {})
+        
+        self.line_sim_image.setText(data.get("image_path", ""))
+        self.spin_sim_width.setValue(data.get("width", 0))
+        self.spin_sim_height.setValue(data.get("height", 0))
+        
+        # ---> INSERIR AQUI: Carregamento dos valores paramétricos
+        if hasattr(self, 'slider_sim_fov'):
+            self.slider_sim_fov.setValue(data.get("sim_fov", 170))
+            self.slider_sim_pan.setValue(data.get("sim_pan", 0))
+            self.slider_sim_tilt.setValue(data.get("sim_tilt", 0))
+            self.slider_sim_k1.setValue(data.get("sim_k1", 0))
+            self.slider_sim_k2.setValue(data.get("sim_k2", 0))
+            
+        # ---> INSERIR ESTAS LINHAS NO FINAL DO MÉTODO:
+        if hasattr(self, 'btn_sim_preview'):
+            has_image = bool(self.line_sim_image.text().strip())
+            self.btn_sim_preview.setEnabled(has_image)
+
+    def _open_sim_preview_window(self):
+        image_path = self.line_sim_image.text()
+        if not image_path or not os.path.exists(image_path):
+            QtWidgets.QMessageBox.warning(self, "Aviso", "O caminho da imagem é inválido.")
+            return
+            
+        # Se a janela já existir e estiver aberta, foca nela
+        if self.preview_window is not None and self.preview_window.isVisible():
+            self.preview_window.activateWindow()
+            return
+            
+        # Instancia a nova janela flutuante passando a imagem
+        self.preview_window = VidyaFisheyePreviewWindow(image_path, self)
+        
+        # Conecta os sliders ao método de atualização
+        self.slider_sim_fov.valueChanged.connect(self._update_live_preview)
+        self.slider_sim_pan.valueChanged.connect(self._update_live_preview)
+        self.slider_sim_tilt.valueChanged.connect(self._update_live_preview)
+        self.slider_sim_k1.valueChanged.connect(self._update_live_preview)
+        self.slider_sim_k2.valueChanged.connect(self._update_live_preview)
+        
+        # Mostra a janela (Não-modal, o utilizador ainda pode clicar nos sliders)
+        self.preview_window.show()
+        
+        # Força a primeira renderização para a janela não abrir em branco
+        self._update_live_preview()
+
+    def _update_live_preview(self):
+        """Envia o estado atual dos sliders para a janela de Preview (se ela estiver aberta)."""
+        if self.preview_window is not None and self.preview_window.isVisible():
+            self.preview_window.update_preview(
+                fov_deg=self.slider_sim_fov.value(),
+                pan_orig=self.slider_sim_pan.value(),
+                tilt_orig=self.slider_sim_tilt.value(),
+                k1_raw=self.slider_sim_k1.value(),
+                k2_raw=self.slider_sim_k2.value()
+            )
+
+    def _on_browse_sim_image(self):
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Selecionar Imagem de Referência", "", 
+            "Imagens (*.jpg *.jpeg *.png *.tif *.tiff)"
+        )
+        if file_path:
+            import cv2
+            img = cv2.imread(file_path)
+            if img is not None:
+                h, w = img.shape[:2]
+                self.line_sim_image.setText(file_path)
+                self.spin_sim_width.setValue(w)
+                self.spin_sim_height.setValue(h)
+                
+                # ---> INSERIR ESTA LINHA: Habilita o botão do preview
+                if hasattr(self, 'btn_sim_preview'):
+                    self.btn_sim_preview.setEnabled(True)
+            else:
+                QtWidgets.QMessageBox.warning(self, "Erro", "Não foi possível ler a imagem selecionada.")
                     
     def _build_markers_tab(self):
         tab = QtWidgets.QWidget()
@@ -2731,12 +3089,121 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                     "checker_size": self.spin_checker_size.value(),
                     "checker_path": self.line_checker_path.text()
                 }
+
+        # --- Salvar dados da aba Simular (Fish-eye Paramétrico) ---
+        if hasattr(self, 'combo_sim_profile'):
+            sim_profile = self.combo_sim_profile.currentText().strip()
+            if sim_profile:
+                self.settings["last_sim_profile"] = sim_profile
+                
+                if "fisheye_sim_profiles" not in self.settings:
+                    self.settings["fisheye_sim_profiles"] = {}
+                    
+                if sim_profile not in self.settings["fisheye_sim_profiles"]:
+                    self.settings["fisheye_sim_profiles"][sim_profile] = {}
+                    
+                self.settings["fisheye_sim_profiles"][sim_profile].update({
+                    "image_path": self.line_sim_image.text(),
+                    "width": self.spin_sim_width.value(),
+                    "height": self.spin_sim_height.value(),
+                    "sim_fov": self.slider_sim_fov.value(),
+                    "sim_pan": self.slider_sim_pan.value(),
+                    "sim_tilt": self.slider_sim_tilt.value(),
+                    "sim_k1": self.slider_sim_k1.value(),
+                    "sim_k2": self.slider_sim_k2.value()
+                })
+                
+        # --- Salvar dados da aba Simular (Fish-eye Paramétrico) ---
+        if hasattr(self, 'chk_use_simulated'):
+            self.settings["use_simulated_rectification"] = self.chk_use_simulated.isChecked()
             
         self._save_project_metadata(current_working_dir)
         
         # save_settings(self.settings)
         # self.settings_saved.emit(self.settings, tab_name)
         # self.accept()
+
+    def _save_simulated_matrices(self):
+        profile_name = self.combo_sim_profile.currentText().strip()
+        w = self.spin_sim_width.value()
+        h = self.spin_sim_height.value()
+        
+        if not profile_name or w == 0 or h == 0:
+            QtWidgets.QMessageBox.warning(self, "Atenção", "Selecione um perfil e carregue uma imagem de referência primeiro.")
+            return
+            
+        import math
+        import numpy as np
+        
+        # Obter valores da interface
+        fov_deg = self.slider_sim_fov.value()
+        pan = self.slider_sim_pan.value()
+        tilt = self.slider_sim_tilt.value()
+        
+        k1 = self.slider_sim_k1.value() / 1000.0
+        k2 = self.slider_sim_k2.value() / 1000.0
+        
+        # 1. Matemática do Centro Ótico
+        cx = (w / 2.0) + pan
+        cy = (h / 2.0) + tilt
+        
+        # 2. Matemática da Distância Focal (Modelo Equidistante)
+        diag_px = math.hypot(w, h)
+        fov_rad = math.radians(fov_deg)
+        focal_length = diag_px / fov_rad if fov_rad > 0 else diag_px
+        
+        # 3. Montagem das Matrizes do OpenCV
+        K = np.array([
+            [focal_length, 0, cx],
+            [0, focal_length, cy],
+            [0, 0, 1]
+        ], dtype=np.float64)
+        
+        D = np.array([[k1], [k2], [0.0], [0.0]], dtype=np.float64)
+        
+        # 4. Gravação Física no Diretório
+        base_install = os.path.dirname(os.path.abspath(__file__)) 
+        base_install = os.path.dirname(base_install)
+        calib_dir = os.path.join(base_install, "calibrations")
+        os.makedirs(calib_dir, exist_ok=True)
+        
+        safe_profile_name = "".join([c if c.isalnum() else "_" for c in profile_name])
+        
+        # Note que registamos a "angular" no nome do ficheiro usando o FOV escolhido pelo utilizador
+        k_filename = f"fisheye_K_{safe_profile_name}_angle_{fov_deg}.npy"
+        d_filename = f"fisheye_D_{safe_profile_name}_angle_{fov_deg}.npy"
+        
+        k_path = os.path.join(calib_dir, k_filename)
+        d_path = os.path.join(calib_dir, d_filename)
+        
+        np.save(k_path, K)
+        np.save(d_path, D)
+        
+        # 5. Injeção Silenciosa na Aba "Retificar" (Para ficar disponível globalmente)
+        if "fisheye_profiles" not in self.settings:
+            self.settings["fisheye_profiles"] = {}
+        if profile_name not in self.settings["fisheye_profiles"]:
+            self.settings["fisheye_profiles"][profile_name] = {"cameras": {}, "settings": {}}
+            
+        result_data = {
+            f"angle_{fov_deg}_K": k_path,
+            f"angle_{fov_deg}_D": d_path,
+            f"angle_{fov_deg}_rms": 0.0, # RMS simulado é tecnicamente erro 0, pois é pura matemática
+            f"angle_{fov_deg}_resolution": [w, h]
+        }
+        
+        self.settings["fisheye_profiles"][profile_name]["settings"].update(result_data)
+        
+        # Grava os valores atuais dos sliders de simulação para a memória também
+        self._sync_ui_to_settings()
+        
+        QtWidgets.QMessageBox.information(
+            self, 
+            "Sucesso Paramétrico", 
+            f"As matrizes sintéticas para o FOV de {fov_deg}° foram gravadas com sucesso!\n\n"
+            f"O Vidya Capture reconhecerá estes parâmetros automaticamente durante a importação "
+            f"quando o perfil '{profile_name}' for selecionado."
+        )
         
     def _save_and_close(self):
         """Método encapsulado que sincroniza a UI, salva no disco e fecha."""
