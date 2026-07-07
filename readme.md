@@ -25,294 +25,376 @@ O que torna o Vidya Capture uma ferramenta de classe laboratorial?
 3. **Preservação Arquivística (Proveniência):** Qualquer alteração feita na imagem (como a agressividade do Dewarp) é registrada permanentemente nos metadados do projeto e embutida no PDF final (Padrão ISO 19005 \- PDF/A), garantindo a rastreabilidade da intervenção.  
 4. **Operação *Hands-Free* (Ergonomia):** A interface foi projetada para ser controlada integralmente pelo teclado ou pedais USB, permitindo que as mãos do operador nunca saiam do livro durante o fluxo de captura.
 
-## **3\. Configuração Inicial (Preferências)**
+## **3\. Interface Principal e Edição**
 
-Antes de iniciar um lote, pressione **F2** ou clique em **Preferências** para configurar o comportamento do laboratório.
-
-###       
-
-### **3.1. Aba Projeto**
-
-* **Pasta de Trabalho Ativa:** Onde os arquivos brutos e JSONs serão salvos.  
-* **Metadados Descritivos:** Preencha Título, Descrição, Editor e Coleção. Estes dados utilizam os padrões *Dublin Core* e *Schema.org* e viajarão de forma inseparável com as imagens e o PDF final.
-
-###       
-
-### **3.2. Aba Dispositivos**
-
-* **Origem:** Escolha entre Câmeras (DSLR/PTP), V4L (Webcams/Câmeras Industriais USB) ou Scanners (SANE).  
-* **Detecção Avançada V4L2:** Permite "forçar" o codec (ex: MJPEG) e a resolução direto no hardware, evitando engarrafamentos no barramento USB do computador.  
-* Pode-se renomear os dispositivos (clique direito) e reordená-los arrastando.
-
-###        
-
-### **3.3. Aba Marcadores**
-
-Controla as sobreposições vetoriais que indicam a área de corte da página.
-
-* Permite mudar cores (ex: Vermelho para Esquerda, Verde para Direita).  
-* **Opacidade e Espessura Dinâmica:** O sistema ajusta a grossura da linha pontilhada com base na resolução de entrada para que ela fique sempre visível, sem ocultar detalhes críticos do documento.
-
-###        
-
-### **3.4. Abas Processar e OCR**
-
-Configura o pipeline automático que rodará ao final da captura:
-
-* **Agressividade Geométrica:** Deslizadores (*sliders*) que vão de 50% a 150% controlam a força dos algoritmos de *Deskew* e *Dewarp*.  
-* **Fonte do PDF:** Escolha se o PDF será montado com as imagens em bruto, as corrigidas geometricamente (originais), ou as tratadas (binarizadas).  
-* **OCR Heurístico:** Filtros pré-OCR ajustáveis (Cor do Papel, Intensidade de Impressão, Tamanho/Profundidade de Manchas). O Vidya Capture usa o motor *Tesseract 5* com controle estrito de *threads* para evitar travamentos de CPU, gerando um PDF/A-2b pesquisável.
-
-## 
-
-## **4\. O Fluxo de Captura**
-
-Na janela principal, você verá a **Visualização ao Vivo (Live View)** das duas câmeras e a barra de **Miniaturas (Thumbnails)** das capturas já realizadas.
+A interface de captura do Vidya Capture é projetada para ser limpa, ergonômica e totalmente controlável por atalhos de teclado (ou pedais), garantindo que as mãos do operador permaneçam livres para manusear o acervo físico. A tela adapta-se dinamicamente ao modo de operação escolhido na criação do projeto. Abaixo, detalhamos os layouts, os fluxos de trabalho e as opções avançadas.
 
 ### 
 
-### **4.1. Os Marcadores de Recorte (Crop)**
+### **3.1. Layouts e Tipos de Captura**
 
-Os retângulos tracejados determinam o que será salvo no final.
+O sistema opera em duas topologias estruturais distintas, alterando a interface gráfica para corresponder ao laboratório físico:
 
-* **Menu de Contexto (Clique Direito):**  
-  * Expandir o recorte para o tamanho total da imagem (individual ou ambos).  
-  * Copiar o formato do marcador do lado oposto (normal ou espelhado).  
-  * **Habilitar Proporção (C):** Trava a proporção altura/largura ao arrastar as bordas.  
-  * **Habilitar Replicação (R):** Tudo que você ajustar no marcador esquerdo será espelhado matematicamente em tempo real para o marcador direito.
+#### 
 
-### 
+#### **3.1.1 Câmera Simples (Mesa Plana)**
 
-### **4.2. Modos Básicos de Captura**
+* **Layout Visual:** Apresenta uma única e grande área de visualização central, maximizando o espaço na tela para observar detalhes do documento.  
+* **Equipamentos e Processos:** Utilizado com scanners de mesa (protocolo SANE), uma câmera DSLR única apontada verticalmente para a mesa, ou webcams industriais de alta resolução (V4L)\[cite: 1, 4\].  
+* **Tipos de Acervos:** Ideal para digitalização de documentos soltos, processos avulsos, mapas ou conjuntos de fotografias que podem ser espalhados sobre a mesa de uma só vez (como demonstrado na interface onde várias fotos antigas são capturadas simultaneamente).
 
-Aperte **Tab** para alternar a ação do botão principal (ou pressione **Espaço** para disparar).
+#### 
 
-1. **Nova Captura:** Tira foto de ambas as páginas e adiciona o par ao final do lote.  
-2. **Substituir:** Apaga os dois últimos arquivos capturados e sobrepõe com uma nova foto (ideal para quando acabou de errar a última virada de página).  
-3. **Teste:** Não salva nada no disco, apenas atualiza o visor para checar o foco ou iluminação.
+#### **3.1.2 Câmera Dupla (Berço em V)**
 
-## 
-
-## **5\. Edição, Inserção e "Máquina do Tempo"**
-
-Se você perceber que um erro ocorreu 30 páginas atrás, clique na miniatura com defeito. O Vidya Capture entrará em **MODO DE EDIÇÃO** (textos em vermelho).
-
-A partir daqui, alterne a ação com **Tab** para uma das seguintes funções:
-
-* **Alterar Recorte:** Apenas reajuste as bordas pontilhadas. O sistema salva as coordenadas silenciosamente. Clique em "Parar Edição" (Esc) quando terminar.  
-* **Substituir Par:** Abre o visor ao vivo. A nova captura substituirá fisicamente os dois arquivos antigos, mantendo a ordem do lote intacta.  
-* **Substituir Esquerda / Direita:** Salva apenas a página danificada. O Vidya Capture instrui o hardware a fotografar, mas descarta a imagem do lado oposto, preservando a foto original intacta.  
-* **Inserir Antes / Depois:** Se duas páginas ficaram coladas durante a digitalização, use esta função. O Vidya Capture executará um *Deslocamento em Cascata*, renomeando cronologicamente centenas de arquivos sucessores para abrir um "espaço" no banco de dados e inserir a página esquecida exatamente no lugar certo.
-
-## 
-
-## 
-
-## **6\. Operação Profissional (Atalhos de Teclado)**
-
-O Vidya Capture é otimizado para que **as mãos nunca precisem sair do documento ou do teclado**.
+* **Layout Visual:** A tela é dividida ao meio, apresentando duas áreas de visualização lado a lado (Câmera Esquerda e Câmera Direita).  
+* **Equipamentos e Processos:** Opera com duas câmeras fotográficas sincronizadas (DSLR ou industriais), montadas fisicamente em ângulos específicos para capturar páginas opostas simultaneamente\[cite: 1, 4\].  
+* **Tipos de Acervos:** Desenvolvido estritamente para materiais encadernados, como livros raros, códices e processos espessos que não podem (ou não devem) ser abertos em um ângulo plano de 180 graus devido à fragilidade da lombada.
 
 ### 
 
-### **Zona de Captura (Essencial)**
+### **3.2. O Painel de Miniaturas (Thumbnails)**
 
-* **Espaço ou Enter:** Capturar / Confirmar Ação.  
-* **Tab:** Alternar Modos (Nova Captura, Substituir, Inserir, etc).  
-* **Delete ou Backspace:** Remover o último par (ou o par selecionado na revisão).  
-* **F5 ou Esc:** Reiniciar vista / Parar Edição / Abortar ação.
+Localizado na lateral esquerda, o painel de miniaturas atua como o histórico visual e o ponto de acesso à "máquina do tempo" do projeto.
 
-### 
+**Opções e Interações no Painel:**
 
-### **Visualização e Geometria**
-
-* **F8** ou **\+:** Mais Zoom.  
-* **F7** ou **\-:** Menos Zoom.  
-* **F6** ou **0:** Ajustar imagens ao tamanho da tela (*Fit to Screen*).  
-* **P:** Ligar/Desligar Trava de Proporção do Crop.  
-* **R:** Ligar/Desligar Replicação bilateral do Crop.  
-* **F3** ou **I:** Inverter o painel esquerdo com o direito (Útil se as portas USB mudarem no boot).
+* **Visualização:** Mostra as últimas capturas realizadas. No modo câmera dupla, exibe os recortes esquerdo e direito vinculados.  
+* **Menu de Contexto (Clique com o Botão Direito):**  
+  * *Criar recortes automaticamente (Auto Crop):* Aciona a Inteligência Artificial para buscar as bordas do papel na imagem selecionada. No modo Câmera Dupla, o sistema perguntará se você deseja aplicar a inteligência em *Somente Esquerda*, *Somente Direita* ou *Em Ambas*.  
+  * *Remover esta imagem / este par:* Exclui fisicamente os arquivos do disco rígido de forma irreversível.  
+  * *Reconstruir miniaturas:* Força o sistema a varrer a pasta do projeto e recriar os ícones visuais para economizar memória RAM.  
+* **Entrada na Edição:** Clicar com o botão esquerdo do mouse sobre qualquer miniatura carrega aquela foto antiga de volta para o visor central, iniciando o Modo de Edição\[cite: 2, 4\]. A miniatura em edição ganha um destaque amarelo brilhante para orientar o operador.
 
 ### 
 
-### **Macros de Alta Velocidade (Com um thumbnail selecionado)**
+### **3.3. Modo de Edição (Máquina do Tempo)**
 
-Atalhos que selecionam a ação e engatilham a câmera em milissegundos:
+Quando uma miniatura é clicada, o texto das câmeras fica vermelho com a mensagem **MODO DE EDIÇÃO (ESC para voltar)** e o botão de "Reiniciar" transforma-se no botão laranja **Encerra**. Qualquer ajuste nas bordas pontilhadas neste modo é salvo silenciosamente no disco sem precisar clicar em nada \[cite: 2, 4\].
 
-* **Ctrl \+ Insert:** Macro \-\> Substituir Par.  
-* **Ctrl \+ Seta Esquerda:** Macro \-\> Substituir Apenas a Esquerda.  
-* **Ctrl \+ Seta Direita:** Macro \-\> Substituir Apenas a Direita.  
-* **Ctrl \+ PageUp:** Macro \-\> Inserir Depois deste par.  
-* **Ctrl \+ PageDown:** Macro \-\> Inserir Antes deste par.
+#### **3.3.1 Opções de Ação no Modo de Edição (Alternadas pela Tecla TAB):**
 
-### 
+Ao pressionar a tecla TAB (ou clicar no botão de Modo no canto inferior direito), a ação principal do sistema muda para corrigir erros passados no lote\[cite: 2, 4\]:
 
-### **Exportação e Sistema**
+* **Alterar Recorte:** Ação passiva; apenas permite reajustar as guias geométricas sem disparar o obturador da câmera.  
+* **Substituir Imagem / Substituir Par:** O visor volta a mostrar o vídeo ao vivo. Ao capturar, a nova foto sobrescreve fisicamente a foto antiga que estava com defeito (ex: mão na frente da lente, página desfocada)\[cite: 2, 4\].  
+* **Substituir Esquerda / Substituir Direita (Apenas Câmera Dupla):** O sistema aciona o hardware, mas descarta o lado oposto, salvando a nova foto apenas sobre a página que estava estragada, preservando a irmã intacta\[cite: 2, 4\].  
+* **Inserir Antes / Inserir Depois:** Aciona o "Deslocamento em Cascata". Se uma página colou e foi pulada, o sistema renomeia todas as centenas de arquivos seguintes no disco rígido, abrindo um espaço cronológico para inserir a nova captura exatamente no lugar esquecido\[cite: 2, 4\].
 
-* **F12:** Iniciar processamento e Exportação em Lote (Geração do PDF/A).  
-* **F2:** Abrir Preferências.  
-* **F10:** Alternar janela normal ou maximizada  
-* **F11:** Alternar Modo Tela Cheia.  
-* **F1:** Abrir este Manual em PDF.
-
-## 
-
-## 
-
-## **7\. Processamento e Exportação**
-
-Após digitalizar todo o acervo, pressione **F12 (Exportar)**. O *Worker* Assíncrono do Vidya Capture assumirá o controle:
-
-1. Ele lerá todos os recortes de todas as páginas e isolará a área útil.  
-2. Executará a extração de imagens retificadas  
-3. Executará o *Deskew* e o *Dewarp* com a agressividade calibrada pelo operador.  
-4. Aplicará os algoritmos OpenCV para limpeza de fundo (Clareamento) e realce de texto.  
-5. Montará uma matriz bruta de imagens e passará para o motor *OCRmyPDF* ou *Ghostscript*.  
-6. Embutirá os metadados bibliográficos e as ações de proveniência destrutivas diretamente nas propriedades do arquivo.
-
-O resultado final repousará na pasta out do seu projeto: um PDF/A blindado, padronizado e pronto para ser ingerido por plataformas como o *Omeka S* ou repositórios digitais institucionais.
-
-# **Adendo 1 \- Preferências \- Vidya Capture**
-
-O módulo de Preferências do Vidya Capture é o centro de controle do projeto de digitalização. Aqui são definidos desde os metadados e dispositivos até o processamento final e as garantias de preservação digital. As configurações são organizadas em oito abas.
-
-**Importante:** Após ajustar todas as preferências, clique no botão “**Aplicar**” no canto inferior direito para salvar as alterações, ou “**Cancelar**” para descartá-las.
-
-## **1\. Aba Projeto (Configurações Gerais e Metadados)**
-
-Esta aba define a estrutura e a identidade do lote de digitalização. \* **Pasta de Trabalho Ativa:** Define o diretório raiz onde todas as capturas, metadados e arquivos JSON do projeto serão centralizados. (*Atenção: certifique-se de ter espaço em disco suficiente no caminho escolhido*). \* **Modo de Operação do Projeto:** Define a topologia de captura (ex.: *Berço em V (Página Dupla)*). \* ⚠️ **Aviso Crucial:** Esta opção **não pode ser alterada** após a criação do lote. Escolha corretamente antes de iniciar. \* **Verificação de Integridade dos Arquivos:** Permite ativar ou desativar a checagem de integridade (opção apresentada como “*Sem verificação*”). O sistema avisa que desativar acelera o processo, mas ignora alertas de adulteração física. \* **Metadados Descritivos:** Informações que serão gravadas no arquivo PDF/A final. \* *Nome do Projeto*, *Descrição* (campos de texto livre). \* *Data de Criação* (campo automático e não editável, preenchido com o timestamp ISO). \* *Editor/Instituição*, *Fundo/Coleção*, *Operador/Criador* (campos cruciais para a rastreabilidade documental em arquivos).
-
-## **2\. Aba Dispositivos (Controle de Hardware)**
-
-Gerencia quais equipamentos de captura o Vidya Capture irá utilizar. \* **Dispositivo de Origem:** Selecione o tipo de dispositivo no menu suspenso (Câmeras DSLR, Video For Linux 2 \- V4L, ou Scanners SANE). \* **Modo V4L (Câmeras):** Apresenta uma lista dos dispositivos V4L detectados no sistema (ex.: Webcam, USB Camera). Instruções do sistema: Arraste os itens para reordenar a lista ou clique com o botão direito para **Renomear**. Use os botões “*Varredura Rápida*” ou “*Detecção Avançada*” para listar os hardwares conectados. \* **Modo Scanners (SANE):** Lista os scanners de mesa/rede encontrados (ex.: HP Deskjet 2050). Após selecionar, configure os parâmetros de digitalização: \* *Resolução (DPI):* Defina a qualidade óptica (300 DPI no exemplo). \* *Modo de Cor:* Color, Gray, ou Black & White. \* *Alimentação e Formato da Página:* Ajuste para o tipo de alimentador (Flatbed/ADF) e o tamanho do papel (ex.: A4). \* *Brilho e Contraste (Hardware):* Ajuste numérico via sliders. \* ⚠️ **Aviso Importante:** O suporte avançado do SANE exige que o projeto esteja configurado no modo “**Mesa Plana (Câmera Única)**”.
-
-## **3\. Aba Orientação (Rotação dos Sensores)**
-
-Configura a orientação espacial da captura para scanners em formato de berço (V-cradle). \* Para garantir que as imagens fiquem na orientação correta sem precisar girar cada foto manualmente, o software permite definir a rotação de cada sensor. \* *Rotação do Sensor Esquerdo:* Ajustável (ex.: 270°). \* *Rotação do Sensor Direito:* Ajustável (ex.: 90°).
-
-## **4\. Aba Marcadores (Auxílios Visuais de Recorte)**
-
-Controla a aparência da interface de recorte manual. Ajustar essas cores ajuda o operador a visualizar melhor as bordas durante a captura. \* *Cor do Marcador Esquerdo / Direito:* Selecione as cores que definem as guias de corte (Verde e Ciano no exemplo). \* *Cor de Preenchimento de Recorte:* Transparência ou cor sólida da área a ser cortada. \* *Opacidade do Fundo:* Define a transparência do fundo atrás dos marcadores (1% no exemplo). \* *Intensidade da Borda Dinâmica:* Ajusta o contraste da borda que o software detecta automaticamente (100% no exemplo).
-
-## **5\. Aba Imagens (Qualidade e Recorte Automático)**
-
-Centraliza os ajustes pós-captura e os algoritmos de inteligência de corte. \* **Formato e Qualidade das Imagens de Saída:** Define o formato do arquivo (ex.: JPG) e a taxa de compressão (ex.: Qualidade 85%). Ajuste para um bom equilíbrio entre tamanho de arquivo e qualidade do PDF final. \* **Controle da Imagem Capturada:** Ajustes numéricos aplicados via software (brilho e contraste, ambos em 0%). Há um botão “*Restaurar padrões de fábrica*” para estes controles. \* **Inteligência de Recorte Automático (Auto Crop):** Algoritmo avançado que identifica as bordas da página. \* *Perfil de Detecção:* (ex.: Fundo Muito Escuro). \* *Desfoque de Fusão, Dilatação de Fissuras, Margem de Segurança e Área Mínima:* Sliders que refinam a sensibilidade do algoritmo para não cortar acidentalmente o conteúdo da página. \* *Cálculo de Contraste:* Define como o software mede as bordas (ex.: *Forçar Fundo Preto*). \* *Número Máximo de Quadros:* Limite de processamento (ex.: Ilimitado).
-
-## **6\. Aba Processar (Ações de Lote e Geração de PDF)**
-
-Define as operações que serão executadas automaticamente ao finalizar a captura e gerar o lote. \* **Ações para Executar em Lote:** Marque os algoritmos desejados: \* *Cortar (Crop).* \* *Alinhamento (Deskew OpenCV) e Planificação Geométrica (Dewarp):* Ajusta a inclinação e a curvatura natural da página (100% de intensidade). \* *Produzir PDF Unificado:* Cria o arquivo final. \* *Ignorar primeira e última imagens:* Útil em berço em V para remover capas vazias digitalizadas de forma automática. \* **Fonte de Imagens para o PDF Final:** Permite escolher entre “Imagens de Entrada” (brutas), “Imagens Originais” ou “Imagens Tratadas” (pós-processadas). \* **Destino Final do PDF e Limpeza:** Define a pasta para onde o PDF é movido automaticamente após a geração. \* ⚠️ **Aviso:** Existe uma opção para “*Depois de copiar o PDF com sucesso, remover todos os arquivos temporários*”. Habilite com cuidado, pois isso apagará todo o conteúdo da pasta ‘out’ caso o PDF seja gerado.
-
-## **7\. Aba OCR (Reconhecimento Óptico de Caracteres)**
-
-Responsável por extrair o texto das imagens para tornar os PDFs pesquisáveis. \* **Ativação:** Marque a caixa “*Habilitar Extração de Texto (Tesseract 5 \+ PDF/A)*”. \* **Pré-processamento (Binarização OpenCV):** Melhora o contraste entre texto e fundo para aumentar a precisão do OCR. Ative os filtros de realce e ajuste os sliders de *Cor do Papel*, *Intensidade da Impressão*, *Tamanho* e *Profundidade das Manchas*. \* **Motor OCRmyPDF (Tesseract):** \* *Idiomas Base:* Selecione os idiomas do documento (ex.: por+eng para português e inglês). \* *Núcleos CPU (Jobs):* Defina quantos núcleos do processador o software pode usar para acelerar o OCR (ex.: 2 núcleos). \* *Arquivamento Extra:* Opção para “Gerar TXT Separado (.txt)” contendo todo o texto extraído para uso em indexação.
-
-## **8\. Aba Custódia (Preservação e Padrões Arquivos)**
-
-Configura os padrões internacionais de preservação digital, essenciais para bibliotecas e arquivos. \* **Garantia de Fixidez e Origem:** “*Calcular e selar Hash SHA-256*”. Esta opção cria uma prova criptográfica em tempo real. Embora possa atrasar levemente a captura em discos lentos, é vital para comprovar a integridade dos arquivos. \* **Rastreabilidade de Transformações (Padrão PREMIS):** “*Registrar eventos de processamento no manifesto do projeto*”. Anexa ao arquivo project.json todo o histórico de alterações (Deskew, Dewarp, OCR), seguindo o padrão arquivístico PREMIS. \* **Estruturas de Distribuição e Repositório:** \* *Empacotar em padrão internacional BagIt:* Gera manifestos de integridade exigidos por repositórios como AtoM, Archivematica e DSpace. \* *Exportar metadados tabulares (.TSV):* Gera um arquivo TSV para importação em planilhas (Excel), Tainacan, Omeka S etc. Inclui a opção de adicionar a coluna de integridade SHA-256 e a coluna com o texto integral do OCR. \* *Granularidade:* Permite escolher se o registro é feito ao nível do livro ou da página (ex.: “*1\. Registro Global (Ao nível do Livro)*”).
-
-### **Dica Final**
-
-Utilize sempre o botão “**Restaurar padrões de fábrica**” presente nas abas *Imagens, Processar, OCR e Custódia* se você realizar muitas alterações e desejar voltar à configuração original recomendada pelo software.
-
-# **Adendo 2 \- Recortes \- Vidya Capture**
-
-No universo da preservação digital, a captura da imagem é apenas o primeiro passo de um fluxo de trabalho rigoroso. O verdadeiro desafio operacional começa quando nos deparamos com a diversidade física dos acervos: jornais históricos de grandes dimensões com colunas desalinhadas, documentos encadernados capturados em berços bi-câmara, páginas fotografadas com distorções de perspetiva ou a necessidade de processar múltiplos itens dispostos numa única mesa de captura.
-
-O objetivo desta sessão é capacitá-los no domínio absoluto das ferramentas geométricas do Vidya. Vamos explorar de que forma a interface gráfica traduz interações simples do utilizador — como o arrastar de um nó ou o clique em um menu de contexto — em transformações matriciais complexas e automatizadas via OpenCV, sem nunca comprometer a integridade e a cadeia de custódia dos metadados estruturais.
-
-Ao longo desta apresentação, abordaremos detalhadamente quatro pilares práticos:
-
-1. **Controle de Recortes Base**: A inclusão, ajuste milimétrico e eliminação de quadros de *crop*, mantendo a consistência visual e a proporção de aspeto.  
-2. **Segmentação Avançada de Layouts (Topos Ortogonais)**: Como quebrar a rigidez de um retângulo para contornar artigos de jornais e páginas complexas, isolando apenas a informação útil.  
-3. **Deskew Manual e Correção de Perspetiva**: O uso da homografia de 4 pontos para retificar e planificar digitalmente documentos capturados sob ângulos desfavoráveis ou não-ortogonais.  
-4. **Automação Multi-Crop**: Estratégias para duplicar, espelhar e processar múltiplos recortes simultâneos, maximizando a produtividade de projetos de digitalização em larga escala.
-
-Nas páginas seguintes aprenda sobre a lógica visual e os fluxos operacionais que garantem ao Vidya um padrão de excelência arquivística. Vamos dar início à sessão.
-
-## **1\. Inclusão, Modificação e Remoção de Retângulos de Recorte**
-
-A interface de recorte padrão do Vidya utiliza marcações poligonais dinâmicas que podem ser controladas via mouse ou Menu de Contexto (botão direito).
-
-* **Inclusão de Novos Quadros**: Para adicionar áreas de recorte extras, clique com o botão direito na área de trabalho e selecione "Criar um quadro novo (tamanho da imagem)". Você também pode clonar o marcador selecionando "Duplicar o quadro atual" ou "Duplicar o polígono atual".  
-* **Modificação por Arraste**: Posicione o mouse sobre qualquer aresta da marcação. O cursor mudará para indicar a direção de redimensionamento permitida (horizontal, vertical ou livre). Clique e arraste para redimensionar.  
-* **Ajuste Rápido de Tamanho**: Pelo Menu de Contexto, acesse "Ajustar Tamanho do Recorte..." para aplicar proporções exatas pré-definidas em relação à imagem original, variando de 100% até 25%.  
-* **Trava de Proporção**: Para manter o aspecto visual sem distorções ao arrastar, clique com o botão direito e ative "Habilitar Trava de Proporção".  
-* **Empilhamento Visual**: Em imagens com múltiplos recortes, use "Trazer para Frente" ou "Enviar para Trás" para organizar quais quadros se sobrepõem na interface.  
-* **Remoção**: Para deletar um recorte específico, clique com o botão direito sobre ele e selecione "Remover este Quadro" (ou Polígono). Para limpar rapidamente todo o progresso e voltar à estaca zero, selecione "Remover extras e resetar o quadro principal".
-
-## **2\. Contornos Ortogonais para Jornais e Layouts Complexos**
-
-O sistema suporta a conversão do retângulo básico em polígonos complexos, ideal para capturar artigos de jornais não-lineares ou isolar colunas específicas.
-
-* **Criando um Recorte Complexo (Topos)**: Clique com o botão direito exatamente sobre a aresta que deseja quebrar e selecione "Criar Topo nesta Aresta". O sistema calculará as proporções geométricas e injetará quatro novos vértices (formando uma espécie de degrau ou reentrância) que podem ser arrastados independentemente.  
-* **Simplificando Contornos (União)**: Caso os degraus fiquem curtos demais (arestas de 100 pixels ou menos), você pode clicar com o botão direito sobre eles e selecionar "Unir arestas adjacentes (Simplificar)". O algoritmo do Vidya moverá inteligentemente a aresta mais curta em direção à mais longa para achatar o polígono e remover vértices inúteis, garantindo que a forma nunca tenha menos que 4 pontas.  
-* **Preenchimento Automático do Fundo**: Durante o processamento, a área que ficar **fora** desse polígono será ocultada. O sistema utilizará a forma ortogonal como uma máscara de corte. A parte descartada será automaticamente substituída por uma cor de fundo personalizável (Transparente, Branco, Preto ou um código HEX específico) de acordo com suas configurações.
+**Nota de Segurança:** Nos modos de inserção e substituição, o botão "Capturar" fica colorido e exige dois cliques (Preparar \-\> Confirmar) para evitar destruição acidental do acervo.
 
 ### 
 
-## **3\. Alinhamento Manual e Correção de Perspectiva**
+### **3.4. Menu de Contexto dos Recortes (Edição Avançada)**
 
-Quando os documentos são fotografados com forte angulação, ondulações extremas ou desvios que a inteligência automática não consiga resolver, o Vidya permite o uso da Retificação de Perspectiva através da marcação de um quadrilátero livre (Homografia).
+Ao clicar com o **botão direito** diretamente sobre a linha pontilhada geométrica de um recorte (Crop) na área de visualização, um vasto menu de manipulação matemática é revelado\[cite: 4, 6\].
 
-* **Iniciando a Correção**: Clique com o botão direito e selecione "Iniciar alinhamento manual (Deskew de 4 pontos)".  
-* **Marcação Visual**: Na tela, você criará um traçado marcando as extremidades exatas do documento. O sistema unirá os 4 pontos com uma linha amarela tracejada de alto contraste e aplicará nós circulares amarelos nos cantos. Esses nós podem ser arrastados individualmente para ajuste fino.  
-* **Processamento da Transformação**: Durante a exportação, o motor do Vidya detectará os 4 pontos independentemente da ordem em que você os clicou. Ele ordenará matematicamente os cantos (Superior-Esquerdo, Superior-Direito, Inferior-Direito, Inferior-Esquerdo) e esticará essa área de volta para formar um retângulo perfeito.  
-* **Preservação da Resolução**: A imagem final retificada terá a perspectiva corrigida, mas será exportada forçando as dimensões da fotografia original, garantindo a ausência de perdas na área legível.  
-* **Cancelamento**: A qualquer momento, você pode abortar o ajuste clicando com o botão direito e selecionando "Cancelar alinhamento manual" ou "Remover pontos de alinhamento manual".
+#### **3.4.1 Opções Disponíveis:**
+
+* **Topologia e Formas (Documentos Complexos):**  
+  * *Criar Topo nesta Aresta:* Adiciona vértices (degraus) para contornar perfeitamente colunas de jornais antigos ou livros danificados.  
+  * *Unir arestas adjacentes (Simplificar):* Achata recortes complexos removendo degraus desnecessários.  
+* **Sincronização (Apenas Câmera Dupla):**  
+  * *Copiar Recorte do Lado Oposto:* Clona o polígono da câmera vizinha de forma idêntica ou matematicamente *Espelhada*.  
+* **Homografia e Perspectiva:**  
+  * *Iniciar alinhamento manual (Deskew de 4 pontos):* Troca o retângulo por uma mira de 4 pontos livres para corrigir fisicamente distorções severas de perspectiva.
+
+
+* **Transformações e Escalonamento Rápidos:**  
+  * *Espelhar:* Horizontalmente ou Verticalmente.  
+  * *Girar:* 90° no sentido Horário ou Anti-horário.  
+  * *Ajustar Tamanho:* Escala matematicamente o quadro de 100% até 25% com um clique.  
+* **Múltiplos Recortes (Apenas Câmera Simples):**  
+  * *Criar um quadro novo:* Adiciona caixas de corte extras na mesma imagem para capturar fotografias espalhadas na mesa de uma só vez.  
+  * *Duplicar quadro atual:* Clona o polígono selecionado injetando um desvio visual.  
+  * *Remover extras e resetar:* Apaga todos os recortes adicionais e força o quadro principal a ocupar 100% da fotografia nativa.
 
 ### 
 
-## **4\. Geração de Múltiplos Recortes (Multi-Crop)**
+### **3.5. Outras Opções da Interface (Barras de Controle)**
 
-O sistema foi preparado para acelerar o fluxo em projetos onde mais de um documento/página é capturado na mesma foto.
+A interface abriga atalhos diretos para não interromper a fluidez da digitalização:
 
-* **Modo Berço em V (Câmera Dupla)**: O Menu de Contexto oferece opções dinâmicas como "Copiar Recorte do Lado Oposto" e "Copiar Recorte do Lado Oposto (Espelhado)". Essa função permite que um layout de recorte ajustado na câmera da esquerda seja perfeitamente refletido na câmera da direita.  
-* **Replicação de Configurações**: Você pode "Habilitar Replicação" para que, em fluxos de trabalho emparelhados, as edições de um marcador sejam refletidas sistematicamente.  
-* **Câmera Única Múltiplos Itens**: Se você tirar foto de múltiplas fotos/documentos espalhados numa mesa, basta usar o comando "Criar um quadro novo" para colocar um marcador sobre cada item isolado. O motor de processamento separará matematicamente cada quadro na imagem final, adicionando um sufixo rotulado (clip) ao nome de arquivo gerado de cada recorte.
+* **Barra Superior (Toolbar):**  
+  * *Preferências:* Atalho para as configurações globais do sistema.  
+  * *Inverter:* Espelha as câmeras de lado caso as portas USB sejam detectadas inversamente pelo computador.  
+  * *Controles de Zoom:* Mais zoom, Menos zoom e enquadramento automático.  
+  * *Checkboxes (Proporção e Replicar):* Travam o aspecto (Aspect Ratio) do retângulo ao arrastar ou forçam que qualquer movimento feito na câmera esquerda reflita automaticamente na direita\[cite: 2, 4\].  
+  * *Exportar:* Aciona o Worker assíncrono para processar o lote, retificar a geometria e gerar o PDF final\[cite: 2, 4\].  
+  * *Tema (C/E):* O pequeno botão quadrado altera instantaneamente a interface entre o Tema Claro e o Tema Escuro.  
+* **Barra Inferior (Rodapé):**  
+  * Exibe atalhos rápidos do teclado (F1, F4), a pasta de destino exata em que o acervo está sendo salvo no momento, e a contagem total de imagens capturadas para a volumetria diária.
 
-# **Adendo 3 \- Recorte Automático (Auto Crop)**
+## **4\. Configuração Inicial e Criação de Projeto**
 
-## **1\. Introdução à Inteligência de Recorte Automático**
+A aba **Projeto** na janela de Preferências do Vidya Capture é o ponto de partida do seu fluxo de digitalização. É nesta etapa que você define a estrutura de pastas, a topologia do seu hardware de captura e a identidade arquivística do lote documental. Abaixo, detalhamos cada uma das configurações presentes nesta seção.
 
-No fluxo laboratorial de digitalização, isolar o documento do fundo da mesa de captura é um passo crítico para a qualidade da exportação. O Vidya Capture possui um motor de Inteligência de Recorte Automático (Auto Crop) avançado, que atua analisando matematicamente o contraste da imagem para encontrar as bordas do papel, substituindo a necessidade de ajustar manualmente os polígonos de corte. Esse módulo integra a interface gráfica (GUI), o painel de configurações e o núcleo de processamento assíncrono para garantir recortes precisos e preservação dos metadados.
+#### 
 
-## **2\. Configuração Inicial (Preferências)**
+### **4.1. Criação do Projeto e Importação de Pastas (aba Projeto)**
 
-As regras que governam a inteligência de recorte são configuradas através da janela de Preferências (tecla `F2`). As configurações do Auto Crop estão localizadas na **Aba Imagens**.
+O primeiro passo para qualquer digitalização é definir onde os arquivos físicos e lógicos vão residir.  
+Na seção **Pasta de Trabalho Ativa**, clique no botão **Selecionar/Importar/Criar**:
 
-Nesta aba, você encontrará a seção **Inteligência de Recorte Automático (Auto Crop)**, que oferece os seguintes controles:
+* **Para criar um novo projeto:** Navegue até o diretório raiz desejado no seu computador, crie uma nova pasta (por exemplo, work\_dir dentro de teste-crop) e selecione-a. O Vidya Capture passará a centralizar todas as capturas de imagem e arquivos de configuração JSON exatamente neste local.  
+* **Para importar/retomar um projeto:** Se você precisar continuar um lote não finalizado, basta selecionar a pasta do projeto existente. O sistema identificará automaticamente o arquivo manifesto (project.json) e carregará todo o seu progresso anterior, incluindo marcações de recorte e metadados.
 
-* **Perfil de Detecção:** Permite carregar pré-definições prontas para lidar com os cenários mais comuns (ex: "Fundo Muito Escuro", "Fundo Muito Claro" ou "Padrão de Fábrica").  
-* **Desfoque de Fusão (Ímpar):** Controla o algoritmo *Gaussian Blur*, que suaviza a imagem para ignorar pequenos defeitos. É ajustável entre 3 e 31, sendo sempre forçado a um número ímpar matematicamente para compatibilidade com o motor OpenCV.  
-* **Dilatação de Fissuras:** Define a intensidade da operação morfológica de dilatação (de 0 a 10), muito útil para "unir" virtualmente papéis rasgados ou bordas muito desbotadas antes do cálculo do corte.  
-* **Margem de Segurança:** Adiciona automaticamente uma margem extra (padding) de 0% a 15% ao redor da área de corte, evitando que caracteres rentes à borda sejam perdidos.  
-* **Área Mínima do Recorte:** Define o tamanho mínimo (de 0.1% a 10.0% da imagem total) que o sistema considerará como um documento válido, ignorando manchas pequenas e sujidades no fundo.  
-* **Cálculo de Contraste:** Define a heurística de reconhecimento das bordas. Se ajustado para "Automático", o algoritmo lê estatisticamente os pixels da borda da imagem e inverte a máscara binária (usando a função *bitwise\_not*) apenas se o fundo for predominantemente claro. Também pode ser forçado para "Fundo Preto" ou "Fundo Branco".  
-* **Número Máximo de Quadros:** Em cenários de Câmera Única com múltiplos documentos espalhados na mesa, limita a quantidade de recortes extraídos de uma mesma foto (0 \= ilimitado).
+#### 
 
-## 
+### **4.2. Tipos de Projetos (Topologia de Captura)**
 
-## **3\. Operação de Recorte na Interface Gráfica (GUI)**
+Logo abaixo da pasta de trabalho, encontra-se o **Modo de Operação do Projeto**. O Vidya Capture foi desenhado para entender diferentes arquiteturas físicas de laboratório, oferecendo dois modos principais:
 
-A aplicação do Auto Crop pode ser feita dinamicamente durante o uso da interface, sem depender da exportação em lote. Esta interação ocorre através do painel de miniaturas.
+* **Mesa Plana (Câmera Única):** Ideal para digitalização de documentos soltos, fotografias, processos avulsos ou utilização de scanners de mesa (SANE). Toda a interface gráfica e o recorte automático serão otimizados para um único fluxo de imagem.  
+* **Berço em V (Página Dupla):** Configuração voltada para a captura de livros e códices encadernados, em que duas câmeras operam simultaneamente fotografando as páginas da esquerda e da direita.
 
-**Como aplicar o Auto Crop individualmente:**
+⚠️ **Atenção Estrutural:** O modo de operação define toda a topologia de captura e o banco de dados do projeto. Portanto, **ele não pode ser alterado após a criação do lote**. (Observe que, quando um projeto já está em andamento, como no exemplo da captura de tela, o menu suspenso fica bloqueado/acinzentado, protegendo a integridade do trabalho).
 
-1. Na barra de miniaturas à esquerda, clique com o botão direito sobre a foto (ou par de fotos) desejada.  
-2. Selecione a opção **Criar recortes automaticamente (Auto Crop)** no menu de contexto.  
-3. **Topologia de Berço em V:** Se o seu laboratório estiver configurado no modo de Câmera Dupla (Página Dupla), o sistema protegerá a integridade do trabalho abrindo uma janela de confirmação. O operador poderá escolher aplicar o Auto Crop em **"Somente Esquerda"**, **"Somente Direita"** ou **"Em Ambas"**. No modo Câmera Única (Mesa Plana), a ação é direta.  
-4. Durante o processo, o ponteiro do rato ficará em estado de espera (*WaitCursor*).  
-5. **Atualização em Tempo Real:** Se as imagens selecionadas estiverem ativas no visor de edição (Modo de Revisão), a GUI redesenhará os marcadores virtuais de corte quase imediatamente para refletir as novas coordenadas calculadas pela Inteligência Artificial. Caso contrário, o sistema exibirá uma notificação informando em quantas imagens os recortes foram aplicados. Se a inteligência falhar por baixo contraste com o fundo da mesa, um aviso recomendará a aplicação de marcadores manuais.
+#### 
 
-## **4\. Processamento em Lote e Exportação**
+### **4.3. Preenchimento de Metadados e Sua Utilização**
 
-Ao finalizar a sessão de captura, o operador deve pressionar `F12` (Exportar) para que o *Worker Assíncrono* processe o projeto massivamente. No processador em lote, o recorte automático tem uma relação forte com as ferramentas geométricas de correção de perspectiva e *Deskew*.
+A digitalização de preservação exige que a proveniência do objeto físico viaje junto com a sua representação digital. A seção **Metadados Descritivos do Projeto** serve para catalogar o acervo no momento zero da captura.  
+Preencha os seguintes campos:
 
-**O Fluxo de Retificação e Auto Crop Pós-Deskew:**
+* **Nome do Projeto:** O título da sua campanha ou lote de digitalização (ex: *Teste Crop*).  
+* **Descrição:** Detalhes sobre o escopo do projeto, estado de conservação ou objetivos específicos.  
+* **Editor/Instituição:** A organização custodiadora responsável pelo acervo (ex: *MCG \- Museu Campos Gerais*).  
+* **Fundo/Coleção:** O conjunto documental arquivístico a que o material pertence (ex: *Coleções de teste do MCG*).  
+* **Operador (Criador):** O nome do técnico responsável por realizar a captura (ex: *cloter*).  
+* *Nota: O campo **Data de Criação** é gerado e travado automaticamente pelo sistema assim que o projeto é salvo pela primeira vez.*
 
-* Se o documento precisar de alinhamento físico, a rotina intercepta a imagem e processa a função matemática.  
-* A rotina lê os metadados de preferência definidos na aba de configurações.  
-* Uma binarização de `Otsu` é aliada ao modo de inversão e à dilatação matricial para extrair contornos fechados.  
-* As caixas contornadas válidas ganham uma margem segura de *Padding*, calculada sobre a largura e altura detectadas de forma a nunca ultrapassar os limites da matriz original.  
-* Os resultados são ordenados, privilegiando o maior retângulo útil.  
-* Por fim, a matriz gráfica é fisicamente truncada (recortada) seguindo as coordenadas exatas calculadas.  
-* Em cumprimento aos padrões arquivísticos rigorosos e à cadeia de custódia, todo esse processo destrutivo é perfeitamente trilhado: um evento informando **"Auto Crop Pós-Deskew"** é inserido na auditoria (padrão PREMIS) e incluído como manifesto permanente no arquivo do pacote.
+**Como estes metadados serão utilizados?** O sistema os processa e os mapeia para padrões arquivísticos internacionais (como o padrão *Dublin Core*). Quando a captura é finalizada e você aciona a exportação, o motor do Vidya Capture injeta essas informações diretamente na estrutura interna (XMP) do **PDF/A** final\[cite: 3, 4\]. Isso garante que o documento gerado possua prova de autoria nativa e esteja padronizado para ingestão em repositórios digitais.
+
+### **4.4. Controle e Escolha dos Dispositivos (Aba Dispositivos)**
+
+Na aba **Dispositivos**, você gerencia qual equipamento de hardware o Vidya Capture irá utilizar para extrair as imagens.
+
+No campo **Dispositivo de Origem**, você deve selecionar a tecnologia apropriada no menu suspenso:
+
+* **Câmeras:** Para uso de equipamentos fotográficos DSLR/Mirrorless\[cite: 1, 4\].  
+* **V4L (Video for Linux 2):** Para uso de webcams e câmeras industriais USB\[cite: 1, 4\].  
+* **Scanners:** Para uso de scanners de mesa ou de rede via protocolo SANE\[cite: 1, 4\].  
+* **Classe Mock:** Uma classe de testes virtuais e simulação do sistema (conforme mostrado na interface).
+
+### **4.5. Rotação das Câmeras ou Sensores (Aba Orientação)**
+
+Na aba **Orientação**, você configura a orientação espacial da captura. Esta etapa é especialmente crítica para *book scanners* montados com **Berço em V**, onde as câmeras costumam ser fixadas de lado ou de cabeça para baixo\[cite: 1, 4\].
+
+Para garantir que as imagens fiquem na orientação correta na tela (sem precisar girar cada foto manualmente após a captura), você pode definir a rotação base:
+
+* **Rotação do Sensor Esquerdo:** Selecione entre 0°, 90°, 180° ou 270°\[cite: 1, 4\].  
+* **Rotação do Sensor Direito:** Selecione entre 0°, 90°, 180° ou 270°\[cite: 1, 4\].
+
+## **5\. Recortes, Imagens e Exportação**
+
+Este módulo detalha as configurações avançadas de processamento de imagens e demarcação de recortes do Vidya Capture. As opções aqui definidas garantem que o documento digitalizado seja extraído com precisão do fundo da mesa de captura e exportado com a melhor relação entre qualidade e tamanho de arquivo. Abaixo, detalhamos o funcionamento das abas **Imagens** e **Marcadores**, conforme as configurações apresentadas.
+
+### 
+
+### **5.1 Aba Imagens: Inteligência e Processamento**
+
+A aba "Imagens" centraliza os algoritmos de detecção automatizada e as regras de compressão final dos arquivos\[cite: 1, 4\].
+
+#### 
+
+#### **5.1.1 Inteligência de Recorte Automático (Auto Crop) e Múltiplos Recortes**
+
+O motor de Auto Crop do Vidya atua analisando matematicamente o contraste da imagem para encontrar as bordas do papel, substituindo a necessidade de ajustar os polígonos de corte manualmente.
+
+* **Perfil de Detecção:** Permite carregar pré-definições (ex: *Fundo Muito Escuro*) ou usar o modo *Customizado* para controle total dos algoritmos\[cite: 1, 4\].  
+* **Desfoque de Fusão e Dilatação de Fissuras:** O desfoque (ex: ajustado em 21\) suaviza a imagem para ignorar pequenos defeitos na mesa, enquanto a dilatação (ex: ajustada em 4\) une virtualmente papéis rasgados ou bordas desbotadas antes do cálculo do corte.  
+* **Margem de Segurança e Área Mínima:** A margem (ex: 1.00%) adiciona um respiro ao redor do documento cortado para não perder caracteres rentes à borda, e a área mínima (ex: 1.00%) instrui o sistema a ignorar manchas pequenas no fundo da mesa.  
+* **Cálculo de Contraste e Múltiplos Recortes:** O contraste define como o software lê a borda (ex: *Forçar Fundo Preto*), enquanto o campo *Número Máximo de Quadros* (ajustado para *Ilimitado*) permite que o sistema identifique e separe múltiplos documentos que estejam espalhados na mesma foto, gerando recortes individuais para cada um\[cite: 1, 4, 7\].  
+* **Controle de cor de fundo para auto-crop:** Ao marcar "Usar cor de fundo customizada para os recortes", você pode definir um código hexadecimal exato (como \#252526). O algoritmo de inteligência utilizará esta cor estática específica para encontrar e mascarar o fundo com maior precisão.
+
+#### 
+
+#### **5.1.2 Controle de Cor de Fundo (Remoção)**
+
+Esta seção atua fisicamente nos pixels de fundo da imagem final exportada.
+
+* **Detectar e converter a cor de fundo:** Quando ativada, o sistema isola o documento e substitui ativamente a cor da mesa de captura.  
+* **Substituição e Sensibilidade:** Você pode optar por substituir o fundo da mesa por uma cor sólida ou torná-lo *Transparente*, ajustando a agressividade da detecção através do controle de *Sensibilidade* (ex: \+20).
+
+#### 
+
+#### **5.1.3 Configuração do Controle das Exportações das Imagens**
+
+Define o formato de arquivo que será gerado e inserido no PDF/A.
+
+* **Formato de Saída:** O sistema suporta formatos como JPG, TIFF e PNG.  
+* **Nível de Compressão/Qualidade:** Se você optar por PNG, poderá definir o nível de compressão (ex: nível 6). Se optar por JPG, controlará a qualidade percentual (ex: 95%). Estes ajustes afetam diretamente o peso do pacote BagIt e do PDF final.
+
+#### **5.1.4 Controles Adicionais de Imagens**
+
+* **Brilho e Contraste:** Sliders numéricos (ex: 0%) que aplicam ajustes globais de iluminação via software logo após o clique da câmera, antes da imagem ser salva no projeto.
+
+### 
+
+### **5.2 Aba Marcadores: Configuração Visual**
+
+A aba "Marcadores" não altera os arquivos físicos exportados, mas customiza a interface de operação vetorial para garantir conforto visual e precisão durante o uso dos recortes manuais ou avaliação do Auto Crop\[cite: 1, 4\].
+
+#### 
+
+#### **5.2.1 Transparência e Largura dos Marcadores**
+
+* **Cor do Marcador:** Define as cores das linhas de recorte para cada câmera. Exemplo: *Verde* para o marcador Esquerdo e *Ciano* para o marcador Direito.  
+* **Cor de Preenchimento de Recorte:** Permite aplicar uma cor sólida ou manter a área útil *Transparente*\[cite: 1, 4\].  
+* **Opacidade do Fundo:** Escurece ou clareia a parte da imagem que será "descartada" pelo recorte (ex: 3% de opacidade para um escurecimento muito suave).  
+* **Espessura da Borda Dinâmica:** Controla a grossura da linha pontilhada de corte (ex: 75%), que se autoajusta conforme o zoom da imagem para nunca sumir da tela.
+
+#### 
+
+#### **5.2.2 Bordas nas Visualização das Imagens**
+
+* **Controle da Moldura:** Permite desenhar uma borda virtual ao redor dos limites originais da fotografia na interface gráfica.  
+* **Parâmetros da Borda:** Você pode configurar a *Largura* (ex: 3 px), a *Cor* (ex: Preto), a *Opacidade* (ex: 50%) e o tipo de *Traço* (ex: Pontos).
+
+### 
+
+### **5.3 Como Estes Ajustes Afetam a Exportação Final**
+
+Durante a captura (ao pressionar Espaço ou Enter), o Vidya armazena os recortes poligonais (manuais ou calculados pelo Auto Crop) no arquivo project.json e nos manifestos \_clip\_N.json sem destruir a fotografia original em alta resolução.
+
+O impacto real destas configurações acontece quando você pressiona **F12 (Exportar)**:
+
+* O *Worker Assíncrono* do sistema intercepta a imagem original e lê as coordenadas de geometria gravadas.  
+* O sistema fisicamente recorta as imagens, removendo o lixo indesejado da mesa (inclusive gerando vários arquivos isolados se o Auto Crop ilimitado identificou múltiplos documentos).  
+* O algoritmo de Remoção de Fundo converte os pixels externos ao documento em transparência (conforme configurado na sensibilidade \+20).  
+* Por fim, a imagem resultante é comprimida usando o motor do OpenCV no formato selecionado (ex: PNG compressão 6\) e enviada para o empacotamento PDF/A.  
+* Toda esta cadeia de transformações destrutivas é registrada nos metadados PREMIS para garantir a rastreabilidade arquivística\[cite: 4, 5\].
+
+## **6\. Calibração Preditiva e Geração de OCR**
+
+Este módulo orienta o operador na utilização das ferramentas de otimização automatizada por Inteligência Artificial e na configuração do pipeline de Reconhecimento Óptico de Caracteres (OCR) do Vidya Capture.
+
+### 
+
+#### **Calibração Preditiva (Motor IA Optuna)**
+
+A calibração preditiva substitui o ajuste manual de tentativa e erro por uma otimização matemática baseada em estatística, garantindo o comportamento ideal dos algoritmos para o lote inteiro de documentos.
+
+#### **Quando Fazer a Calibração Preditiva**
+
+A calibração por IA deve ser realizada assim que o projeto ativo possuir um volume inicial de capturas válidas. O sistema exige essa base de dados prévia para que o amostrador consiga realizar um sorteio estratificado e gerar um pool de imagens representativo das variações de iluminação e tipografia do lote.
+
+#### 
+
+### **6.1 O Que Calibrar (Escopo da Otimização)**
+
+O motor de IA avalia e calibra simultaneamente dois grandes blocos operacionais pós-captura:
+
+#### **Inteligência de Recorte (Auto Crop):**
+
+Encontra os valores ideais para o *Desfoque de Fusão* (ac\_blur), a *Dilatação Morfológica* (ac\_dilate) e o método de *Cálculo de Contraste* (ac\_invert).
+
+#### **Pré-processamento de OCR:**
+
+Refina os limites matemáticos da limpeza de imagem, ajustando os hiperparâmetros de *Remoção de Ruído (h)* (ocr\_denoise\_h), *Realce de Contraste (CLAHE)* (ocr\_clahe\_clip), tamanho de janela adaptativa (*Binarização \- Block Size*, ocr\_block\_size) e o fator de corte constante (*Binarização \- C Value*, ocr\_c\_val).
+
+#### 
+
+### **6.1.1 Controles e Número de Interações**
+
+O processo é gerenciado diretamente através do painel de calibração nas configurações do sistema:
+
+* **Configuração do Sorteio:** O operador define o número de sessões e a quantidade de amostras coletadas por sessão que formarão a base de testes.  
+* **Gabarito (Ground Truth):** O sistema abre uma interface de marcação visual para que o operador aponte manualmente o recorte e o alinhamento perfeito sobre o pool sorteado, servindo de alvo para a máquina.  
+* **Ciclo de Iterações:** Ao dar partida no treinamento, a thread executa de forma assíncrona o número de ciclos estipulado na configuração. Uma janela modal ("Calibração Preditiva") exibe o progresso em tempo real e disponibiliza um controle de interrupção imediata ("Abortar Treinamento").  
+* **Gravação do Manifesto:** Ao finalizar as interações, a IA injeta os parâmetros calculados nas preferências, assume o "Perfil Otimizado por IA" e grava permanentemente os coeficientes no arquivo project.json do lote atual.
+
+### 
+
+### **6.2 Reconhecimento Óptico de Caracteres (OCR)**
+
+O módulo de OCR é o responsável por transformar a matriz de imagens capturadas em um documento PDF/A pesquisável, indexável e em conformidade com as normas internacionais de preservação digital.
+
+#### 
+
+#### **Quando Realizar o Pré-processamento**
+
+O pré-processamento (Binarização OpenCV) ocorre imediatamente após as correções geométricas (como *Deskew* e *Dewarp*) e antes de os dados serem encaminhados para o motor de OCR. Ele atua isolando os caracteres de texto do fundo do papel, eliminando sombras e manchas físicas que degradam a precisão do reconhecimento textual.
+
+#### **6.2.1 Manual Versus Calibração por IA**
+
+* **Modo Manual:** O operador utiliza a interface visual de preferências para arrastar os sliders de filtragem base (Cor do Papel, Intensidade da Impressão, Tamanho e Profundidade das Manchas). Exige constante validação visual do técnico a cada mudança de tipografia ou cor de documento.  
+* **Otimização por IA:** O motor assume o controle dos limiares de binarização a partir da matemática preditiva gerada no treinamento, aplicando os filtros de forma uniforme e precisa para todas as páginas do lote sem intervenção humana.
+
+#### **6.2.2 Como Escolher os Parâmetros Manuais para o Pré-processamento**
+
+Caso opte pela operação manual, o ajuste dos parâmetros de binarização deve buscar o equilíbrio estrito entre legibilidade e eliminação de ruído:
+
+* O tamanho do bloco e o valor C devem ser configurados de forma a não "esvaziar" o corpo das letras (binarização agressiva) e, simultaneamente, não transformar manchas escuras de umidade ou dobras da lombada em blocos pretos de falso texto.
+
+#### **6.2.3 Parâmetros do Tesseract**
+
+Ao habilitar a extração de texto via Tesseract 5, três parâmetros fundamentais governam o desempenho e a saída do sistema no momento da exportação em lote (F12):
+
+* **Idiomas Base (**ocr\_lang**):** Define os dicionários linguísticos aplicados na varredura. Permite a combinação de múltiplos idiomas (ex: por+eng para processar documentos que mesclam termos em português e inglês), refinando a precisão do reconhecimento de caracteres especiais.  
+* **Núcleos CPU (**ocr\_jobs**):** Controla o limite de threads paralelos alocados para o processamento do OCR. Configurar este limite impede que o motor consuma toda a capacidade de processamento da estação de trabalho, protegendo o sistema contra travamentos de CPU.  
+* **Arquivamento Extra (**ocr\_sidecar**):** Diretiva que instrui o software a gerar e salvar um arquivo de texto limpo e isolado (.txt) contendo o conteúdo integral do lote. Este arquivo gerado via *sidecar* serve como ferramenta de preservação complementar e facilita a indexação automática em bancos de dados e repositórios digitais como o Omeka S.
+
+## **7\. Exportação Final e Cadeia de Custódia Digital**
+
+Este módulo orienta o operador na configuração das políticas de pós-processamento, consolidação do arquivo final e nos parâmetros de conformidade arquivística que garantem a autenticidade e a integridade do acervo digitalizado.
+
+### 
+
+### **7.1. Aba Processar: Diretivas de Lote e Exportação Final**
+
+A aba **Processar** define o pipeline de transformações geométricas e a lógica de montagem do pacote digital final. É nesta etapa que as instruções matemáticas salvas nos arquivos JSON durante a captura ou edição são convertidas em modificações físicas sobre as matrizes de imagem.
+
+#### **7.1.1 Ações para Executar em Lote**
+
+O operador pode marcar e desmarcar quais módulos do motor de processamento assíncrono serão ativados ao acionar a exportação:
+
+* **Cortar (Crop):** Trunca fisicamente a imagem limitando-a à área útil delimitada pelos marcadores. Em cenários de múltiplos recortes na mesma foto, o motor gera arquivos independentes contendo o sufixo rotulado (*clip*).  
+* **Alinhamento (Deskew OpenCV) e Planificação Geométrica (Dewarp):** Aplica a retificação do horizonte textual por regressão linear e corrige a deflexão gerada pela curvatura da lombada dos livros. Ambas as ações utilizam o nível de intensidade parametrizado pelo operador (padrão 100%).  
+* **Produzir PDF Unificado:** Consolida todas as páginas processadas do projeto em um arquivo final indexado.
+
+#### **7.1.2 Filtros de Escopo e Estrutura**
+
+* **Ignorar Primeira e Última Imagens:** Útil em fluxos com berço em V (página dupla) para descartar automaticamente capturas de capas vazias ou contra-capas que não demandam processamento textual.  
+* **Fonte de Imagens para o PDF Final:** Permite ao laboratório escolher o nível de intervenção visual que comporá o documento distribuído:  
+  1. *Imagens de Entrada (Brutas):* Compila o PDF com as capturas originais do sensor, ignorando correções geométricas e limpezas.  
+  2. *Imagens Originais:* Utiliza as fotografias com retificação geométrica aplicada (Deskew/Dewarp), preservando as cores e texturas nativas do papel.  
+  3. *Imagens Tratadas:* Inclui as imagens que passaram pelo pipeline completo, incluindo a binarização adaptativa de alto contraste do OCR, otimizando o peso do arquivo e a leitura em telas.
+
+#### **7.1.3 Destino e Governança de Arquivos**
+
+* **Diretório de Destino:** O documento final consolidado é gravado por padrão na pasta out configurada no diretório raiz do projeto.  
+* **⚠️ Regra de Limpeza Temporária:** A opção *"Depois de copiar o PDF com sucesso, remover todos os arquivos temporários"* deve ser ativada com cautela. Se marcada, o software apagará as imagens isoladas binarizadas e as matrizes intermediárias após a validação do PDF/A, preservando apenas o arquivo unificado e poupando espaço de armazenamento na estação.
+
+### **7.2. Aba Custódia: Garantias de Preservação e Cadeia de Custódia**
+
+A aba **Custódia** implementa os controles e padrões arquivísticos internacionais essenciais para assegurar o valor legal, a imutabilidade e a fixidez dos documentos digitais.
+
+#### 
+
+#### **7.2.1 Garantia de Fixidez e Prova de Origem**
+
+* **Calcular e Selar Hash SHA-256:** Cria uma assinatura matemática criptográfica exclusiva para cada arquivo de imagem gerado no lote em tempo real. O hash funciona como um lacre digital: qualquer tentativa posterior de adulteração física nos pixels ou metadados quebrará a correspondência matemática, alertando o sistema de custódia. Embora adicione um leve overhead de processamento em discos lentos, sua ativação é vital para fins de auditoria e preservação permanente.
+
+#### 
+
+#### **7.2.2 Rastreabilidade de Transformações (Padrão PREMIS)**
+
+* **Registrar Eventos de Processamento no Manifesto:** Incorpora uma trilha de auditoria completa dentro do arquivo central project.json do lote, mapeada sob o padrão arquivístico internacional PREMIS (*Preservation Metadata: Implementation Strategies*). Cada intervenção (como a intensidade do Deskew, aplicação de Auto Crop ou falhas de binarização) ganha um registro de evento imutável associado à página, detalhando o algoritmo e o operador responsável.
+
+#### **7.2.3 Estruturas de Distribuição e Ingestão em Repositórios**
+
+O Vidya Capture prepara os metadados e os pacotes digitais para conversão e diálogo com plataformas institucionais através de duas diretivas de exportação:
+
+* **Empacotar em Padrão Internacional BagIt:** Estrutura o diretório final criando manifestos de carga estruturados (tag manifests), exigidos para a transferência segura e ingestão automatizada em softwares de preservação digital e repositórios como Archivematica, AtoM e DSpace.  
+* **Exportar Metadados Tabulares (.TSV):** Consolida um arquivo com delimitadores por tabulação contendo os campos descritivos preenchidos na criação do projeto (padrão *Dublin Core* e *Schema.org*). O operador pode configurar o arquivo TSV para incluir duas colunas adicionais de alta relevância:  
+  1. *Coluna de Integridade:* Associa o Hash SHA-256 correspondente a cada linha/página.  
+  2. *Coluna de Texto Integral:* Injeta o texto bruto extraído pelo OCR (Tesseract), permitindo a indexação em massa e importação direta em repositórios como o Omeka S e Tainacan.
+
+#### 
+
+  #### **Granularidade da Auditoria**
+
+* **Nível do Registro:** O operador define a profundidade da fiscalização do manifesto, variando entre o *Registro Global (Ao nível do Livro)* — que gera um sumário unificado das operações do volume — e o *Registro por Página*, que detalha as coordenadas isoladas de cada folha do acervo.
+
