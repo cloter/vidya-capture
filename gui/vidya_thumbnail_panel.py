@@ -1,12 +1,12 @@
 # Arquivo: gui/vidya_thumbnail_panel.py
 
 import os
-import glob # <--- ADICIONAR ESTA LINHA
+import glob
 from PyQt5 import QtWidgets, QtCore, QtGui
 from core.config import COLOR_MAP
 from core.logger import get_logger
-# Arquivo: gui/vidya_thumbnail_panel.py (Seção de importações no topo)
 from core.project_manager import VidyaTransformationWorker
+from core.vidya_crops_auto import VidyaCropsAuto
 
 logger = get_logger("ThumbnailPanel")
 
@@ -530,6 +530,7 @@ class VidyaThumbnailPanel(QtWidgets.QListWidget):
             del_text = "Remover este par de imagens do projeto"
             
         action_autocrop = menu.addAction(QtGui.QIcon.fromTheme("object-crop"), "Criar recortes automaticamente (Auto Crop)") # <--- AÇÃO NOVA
+        action_autocrop_all = menu.addAction(QtGui.QIcon.fromTheme("run-build"), "Auto Crop em TODO o lote (Lote Completo)") # <--- ADICIONAR
         menu.addSeparator()
         action_del = menu.addAction(QtGui.QIcon.fromTheme("edit-delete"), del_text)
         menu.addSeparator()
@@ -661,6 +662,22 @@ class VidyaThumbnailPanel(QtWidgets.QListWidget):
 
             if paths_to_process:
                 self.auto_crop_requested.emit(paths_to_process)
+                
+        elif action == action_autocrop_all:
+            warn_text = (
+                "<b>ATENÇÃO: RISCO DE PERDA DE DADOS MANUAIS</b><br><br>"
+                "Esta operação vai recalcular a geometria e substituir os polígonos de <b>todas as imagens</b> do projeto em lote.<br><br>"
+                "Qualquer ajuste de recorte, alinhamento ou adição de marcadores que o operador tenha feito manualmente "
+                "será <u>apagado e substituído</u> pelo cálculo da inteligência artificial.<br><br>"
+                "Deseja realmente aplicar o Auto Crop em todo o acervo ativo?"
+            )
+            reply = QtWidgets.QMessageBox.warning(
+                self, "Confirmação de Processamento em Lote", warn_text,
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No
+            )
+            
+            if reply == QtWidgets.QMessageBox.Yes:
+                self._start_batch_autocrop()
 
     def _start_rebuild_worker(self):
         paths = []
@@ -695,6 +712,48 @@ class VidyaThumbnailPanel(QtWidgets.QListWidget):
         self.progress_dialog.close()
         logger.error(f"Erro na reconstrução de miniaturas: {msg}")
         QtWidgets.QMessageBox.critical(self, "Erro", f"Falha ao reconstruir o cache:\n{msg}")
+
+    def _start_batch_autocrop(self):
+        paths_to_process = []
+        # Coleta todos os caminhos válidos do painel, garantindo que não há duplicados
+        for i in range(self.count()):
+            p = self.item(i).data(QtCore.Qt.UserRole)
+            if p and os.path.exists(p) and p not in paths_to_process:
+                paths_to_process.append(p)
+                
+        if not paths_to_process: return
+        
+        # Bloqueia a UI e exibe a barra
+        self.progress_dialog = QtWidgets.QProgressDialog("Inicializando inteligência artificial...", "Cancelar", 0, 100, self)
+        self.progress_dialog.setWindowTitle("Auto Crop (Lote Completo)")
+        self.progress_dialog.setWindowModality(QtCore.Qt.ApplicationModal)
+        self.progress_dialog.setMinimumDuration(0)
+        self.progress_dialog.setValue(0)
+        
+        # Instancia e conecta a QThread
+        self.worker_autocrop = AutoCropBatchWorker(paths_to_process)
+        self.worker_autocrop.progress.connect(
+            lambda val, txt: (self.progress_dialog.setValue(val), self.progress_dialog.setLabelText(txt))
+        )
+        self.worker_autocrop.finished.connect(self._on_batch_autocrop_finished)
+        self.worker_autocrop.error.connect(self._on_batch_autocrop_error)
+        
+        # Ligação do cancelamento
+        self.progress_dialog.canceled.connect(self.worker_autocrop.cancel)
+        self.worker_autocrop.start()
+
+    def _on_batch_autocrop_finished(self, processed_count):
+        self.progress_dialog.close()
+        QtWidgets.QMessageBox.information(
+            self, "Lote Concluído", 
+            f"Rotina automática finalizada!\n\nForam gerados/sobrescritos recortes automáticos em {processed_count} imagens."
+        )
+        # O painel central (canvas) relerá os novos JSONs automaticamente quando o operador clicar nas fotos.
+
+    def _on_batch_autocrop_error(self, msg):
+        self.progress_dialog.close()
+        logger.error(f"Erro no Auto Crop em lote: {msg}")
+        QtWidgets.QMessageBox.critical(self, "Erro de Execução", f"Ocorreu uma falha durante o processamento em lote:\n{msg}")
         
 class ThumbnailRebuilderWorker(QtCore.QThread):
     progress = QtCore.pyqtSignal(int, str)
@@ -760,3 +819,34 @@ class ThumbnailRebuilderWorker(QtCore.QThread):
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
+            
+class AutoCropBatchWorker(QtCore.QThread):
+    progress = QtCore.pyqtSignal(int, str)
+    finished = QtCore.pyqtSignal(int)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self, image_paths):
+        super().__init__()
+        self.image_paths = image_paths
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    def _progress_hook(self, current_idx, total, filename):
+        if self._is_cancelled:
+            return False # Retorna False para quebrar o laço no OpenCV
+            
+        percent = int((current_idx / total) * 100)
+        self.progress.emit(percent, f"A processar recorte: {filename}")
+        return True
+
+    def run(self):
+        try:
+            processed = VidyaCropsAuto.process_images(self.image_paths, progress_callback=self._progress_hook)
+            if not self._is_cancelled:
+                self.progress.emit(100, "Concluído!")
+            self.finished.emit(processed)
+        except Exception as e:
+            self.error.emit(str(e))
+

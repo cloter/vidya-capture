@@ -31,7 +31,7 @@ class VidyaCropsAuto:
         return (0, 0, 0) # Fallback de segurança (Preto)
         
     @staticmethod
-    def process_images(image_paths: list) -> int:
+    def process_images(image_paths: list, progress_callback=None) -> int:
         settings = load_settings()
         
         # Carrega as configurações de Crop
@@ -48,8 +48,17 @@ class VidyaCropsAuto:
         # ---------------------------------------
         
         processed_count = 0
-        for img_path in image_paths:
+        total_images = len(image_paths)
+        
+        for idx, img_path in enumerate(image_paths):
             if not img_path or not os.path.exists(img_path): continue
+            base_name = os.path.basename(img_path)
+            
+            # Hook de progresso e cancelamento (Se retornar False, o processo aborta)
+            if progress_callback:
+                if progress_callback(idx, total_images, base_name) is False:
+                    logger.info("Processamento em lote do AutoCrop cancelado pelo utilizador.")
+                    break
             
             try:
                 base_dir = os.path.dirname(img_path)

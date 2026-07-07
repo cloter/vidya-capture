@@ -167,8 +167,8 @@ class VidyaFisheyePreviewWindow(QtWidgets.QWidget):
         # Ajusta o tamanho da janela ao tamanho do proxy
         self.resize(self.proxy_w + 10, self.proxy_h + 10)
 
-    def update_preview(self, fov_deg, pan_orig, tilt_orig, k1_raw, k2_raw):
-        """Recebe os valores dos sliders, calcula a matriz e atualiza a imagem no ecrã."""
+    def update_preview(self, fov_deg, zoom_orig, pan_orig, tilt_orig, k1_raw, k2_raw):
+        """Recebe os valores dos sliders, calcula a matriz com zoom e atualiza a imagem no ecrã."""
         if not hasattr(self, 'proxy_img'):
             return
             
@@ -180,18 +180,30 @@ class VidyaFisheyePreviewWindow(QtWidgets.QWidget):
         k1 = k1_raw / 1000.0
         k2 = k2_raw / 1000.0
         
-        # Matemática
+        # Lógica para converter o slider de zoom (-200 a 200) em um fator multiplicador seguro (> 0)
+        if zoom_orig >= 0:
+            zoom_factor = 1.0 + (zoom_orig / 100.0)       # 0 a 200 -> 1.0x a 3.0x
+        else:
+            zoom_factor = 1.0 / (1.0 - zoom_orig / 100.0)  # -200 a 0 -> 0.33x a 1.0x
+        
+        # Matemática base da Projeção
         cx = (w / 2.0) + pan
         cy = (h / 2.0) + tilt
         fov_rad = math.radians(fov_deg)
         diag_px = math.hypot(w, h)
         focal_length = diag_px / fov_rad if fov_rad > 0 else diag_px
         
+        # Matriz intrínseca original (K) e a nova matriz com o Zoom aplicado à distância focal (K_new)
         K = np.array([[focal_length, 0, cx], [0, focal_length, cy], [0, 0, 1]], dtype=np.float64)
+        
+        K_new = K.copy()
+        K_new[0, 0] *= zoom_factor
+        K_new[1, 1] *= zoom_factor
+        
         D = np.array([[k1], [k2], [0.0], [0.0]], dtype=np.float64)
         
-        # Planificação super rápida no proxy
-        map1, map2 = cv2.fisheye.initUndistortRectifyMap(K, D, np.eye(3), K, (w, h), cv2.CV_16SC2)
+        # Planificação super rápida no proxy utilizando K_new para o redimensionamento do FOV
+        map1, map2 = cv2.fisheye.initUndistortRectifyMap(K, D, np.eye(3), K_new, (w, h), cv2.CV_16SC2)
         rectified = cv2.remap(self.proxy_img, map1, map2, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
         
         # Conversão de OpenCV (BGR) para PyQt5 (RGB)

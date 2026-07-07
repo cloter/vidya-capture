@@ -12,6 +12,7 @@ from core.config import COLOR_MAP, load_settings, save_settings
 from hardware.vidya_v4l2_scanner import V4L2AdvancedScanner
 from gui.vidya_profiles_dialog import VidyaProfilesDialog
 from core.vidya_fisheye_calibration import FisheyeCalibrationWorker, VidyaFisheyePreviewWindow
+from core.camera_calculator import CameraCalculator  # Ajuste o caminho conforme sua estruturados
 
 class V4L2AdvancedDialog(QtWidgets.QDialog):
     def __init__(self, scan_data, current_config, parent=None):
@@ -86,7 +87,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.preview_window = None  # <--- INSERIR ESTA LINHA AQUI
         self.setWindowTitle("Preferências - Vidya Capture")
-        self.resize(920, 580) 
+        self.resize(1024, 580) 
         self.settings = load_settings()
         self._setup_ui()
         
@@ -119,6 +120,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self._build_optuna_tab()
         self._build_custody_tab()
         self._build_process_tab()
+        self._build_calculator_tab()
 
         btn_layout = QtWidgets.QHBoxLayout()
         btn_save = QtWidgets.QPushButton("Aplicar")
@@ -209,6 +211,445 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                 del custom_names[signature]
                 self.settings["custom_device_names"] = custom_names
                 item.setText(signature)
+
+    def _build_calculator_tab(self):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(tab)
+        
+        # Sub-abas da Calculadora
+        self.calc_tabs = QtWidgets.QTabWidget()
+        layout.addWidget(self.calc_tabs)
+
+        # =========================================================
+        # SUB-ABA 1: RESOLUÇÃO E DPI
+        # =========================================================
+        tab_res = QtWidgets.QWidget()
+        lyt_res = QtWidgets.QFormLayout(tab_res)
+        
+        lbl_info_res = QtWidgets.QLabel("<b>Requisitos de Resolução</b><br><small>Cruza as dimensões físicas do acervo com as exigências arquivísticas de DPI.</small>")
+        lyt_res.addRow(lbl_info_res)
+        
+        self.combo_calc_res_target = QtWidgets.QComboBox()
+        self.combo_calc_res_target.addItems([
+            "1. Calcular Resolução Necessária (a partir do DPI)", 
+            "2. Calcular DPI Máximo (a partir da Câmera)"
+        ])
+        
+        # ========================================================
+        # ---> INÍCIO DO CÓDIGO NOVO (Criação do Dropdown de Documentos)
+        # ========================================================
+        self.combo_res_doc_preset = QtWidgets.QComboBox()
+        self.combo_res_doc_preset.addItem("Tamanho Customizado...", userData=None)
+        
+        doc_types = [
+            ("Folha de papel - A4 (210x297 mm)", (21.0, 29.7)),
+            ("Folha de papel - A3 (297x420 mm)", (29.7, 42.0)),
+            ("Folha de papel - A2 (420x594 mm)", (42.0, 59.4)),
+            ("Folha de papel - Letter US (216x279 mm)", (21.6, 27.9)),
+            ("Folha de papel - Legal BR (216x330 mm)", (21.6, 33.0)),
+            ("Página de jornal moderno (380x560 mm)", (38.0, 56.0)),
+            ("Página de tabloide (289x380 mm)", (28.9, 38.0)),
+            ("Revista comum (210x275 mm)", (21.0, 27.5)),
+            ("Carta Colonial / Fólio Avulso (215x315 mm)", (21.5, 31.5)),
+            ("Livro de Registro / Ata (220x340 mm)", (22.0, 34.0)),
+            ("Fotografia Retrato (102x152 mm)", (10.2, 15.2)),
+            ("Planta Histórica (560x760 mm)", (56.0, 76.0))
+        ]
+        
+        for name, dimensions in doc_types:
+            self.combo_res_doc_preset.addItem(name, userData=dimensions)
+            
+        # Pré-seleciona a Folha A4 (índice 1) para casar com os valores 21x29.7 originais
+        self.combo_res_doc_preset.setCurrentIndex(1)
+        # ========================================================
+        # ---> FIM DO CÓDIGO NOVO
+        # ========================================================
+        
+        self.spin_res_doc_w = QtWidgets.QDoubleSpinBox(); self.spin_res_doc_w.setRange(1, 200); self.spin_res_doc_w.setSuffix(" cm"); self.spin_res_doc_w.setValue(21.0)
+        self.spin_res_doc_h = QtWidgets.QDoubleSpinBox(); self.spin_res_doc_h.setRange(1, 200); self.spin_res_doc_h.setSuffix(" cm"); self.spin_res_doc_h.setValue(29.7)
+        self.spin_res_dpi = QtWidgets.QSpinBox(); self.spin_res_dpi.setRange(50, 2400); self.spin_res_dpi.setSuffix(" DPI"); self.spin_res_dpi.setValue(300)
+        self.spin_res_mp = QtWidgets.QDoubleSpinBox(); self.spin_res_mp.setRange(1, 200); self.spin_res_mp.setSuffix(" MP"); self.spin_res_mp.setValue(24.0)
+        
+        self.lbl_res_result = QtWidgets.QLabel("<b>Resultado:</b> -")
+        self.lbl_res_result.setStyleSheet("color: #2980b9; font-size: 11pt;")
+        
+        lyt_res.addRow("Objetivo do Cálculo:", self.combo_calc_res_target)
+        lyt_res.addRow("Predefinição de Tamanho:", self.combo_res_doc_preset)
+        lyt_res.addRow("Largura do Documento:", self.spin_res_doc_w)
+        lyt_res.addRow("Altura do Documento:", self.spin_res_doc_h)
+        lyt_res.addRow("DPI Alvo (Arquivístico):", self.spin_res_dpi)
+        lyt_res.addRow("Sensor da Câmera:", self.spin_res_mp)
+        lyt_res.addRow("", self.lbl_res_result)
+        self.calc_tabs.addTab(tab_res, "Resolução")
+
+        # =========================================================
+        # SUB-ABA 2: APROVEITAMENTO (AUDITORIA)
+        # =========================================================
+        tab_util = QtWidgets.QWidget()
+        lyt_util = QtWidgets.QFormLayout(tab_util)
+        
+        lbl_info_util = QtWidgets.QLabel("<b>Auditoria de Aproveitamento</b><br><small>Mede o quanto de resolução real atinge o papel e quanto é perdido filmando a mesa.</small>")
+        lyt_util.addRow(lbl_info_util)
+        
+        self.combo_calc_util_target = QtWidgets.QComboBox()
+        self.combo_calc_util_target.addItems([
+            "1. Auditar DPI Real e Desperdício", 
+            "2. Calcular Área de Captura (Enquadramento Ideal)"
+        ])
+        
+        # ========================================================
+        # ---> INÍCIO DO CÓDIGO NOVO (Dropdown de Megapixels)
+        # ========================================================
+        self.combo_util_mp_preset = QtWidgets.QComboBox()
+        self.combo_util_mp_preset.addItem("Resolução Customizada...", userData=None)
+        
+        # A lista de megapixels solicitada
+        mp_options = [4, 8, 16, 20, 25, 32, 48, 50, 80, 108]
+        for mp in mp_options:
+            self.combo_util_mp_preset.addItem(f"{mp} Megapixels", userData=mp)
+            
+        # Deixa em "Customizada" por padrão, pois o SpinBox já inicia em 6000x4000 (24MP)
+        self.combo_util_mp_preset.setCurrentIndex(0)
+        # ========================================================
+        # ---> FIM DO CÓDIGO NOVO
+        # ========================================================
+        
+        # ========================================================
+        # ---> INÍCIO DO CÓDIGO NOVO (Dropdown de Proporção)
+        # ========================================================
+        self.combo_util_aspect_ratio = QtWidgets.QComboBox()
+        self.combo_util_aspect_ratio.addItem("3:2 (DSLR / Mirrorless / APS-C)", userData=1.5)       # 3/2
+        self.combo_util_aspect_ratio.addItem("4:3 (Micro 4/3 / Médio Formato / Celulares)", userData=1.33333333) # 4/3
+        self.combo_util_aspect_ratio.addItem("16:9 (Vídeo / Câmeras de Ação)", userData=1.77777777) # 16/9
+        self.combo_util_aspect_ratio.addItem("1:1 (Formato Quadrado / Instagram)", userData=1.0)
+        self.combo_util_aspect_ratio.addItem("5:4 (Grande Formato Analógico 8x10)", userData=1.25) # 5/4
+        self.combo_util_aspect_ratio.addItem("65:24 (Panorâmico Hasselblad XPan)", userData=2.70833333) # 65/24
+        
+        self.combo_util_aspect_ratio.setCurrentIndex(0) # Inicia em 3:2
+        # ========================================================
+        # ---> FIM DO CÓDIGO NOVO
+        # ========================================================
+
+        self.spin_util_sens_w = QtWidgets.QSpinBox(); self.spin_util_sens_w.setRange(100, 20000); self.spin_util_sens_w.setValue(6000)
+        self.spin_util_sens_h = QtWidgets.QSpinBox(); self.spin_util_sens_h.setRange(100, 20000); self.spin_util_sens_h.setValue(4000)
+        
+        # ========================================================
+        # ---> INÍCIO DO CÓDIGO NOVO (Botão de Importação)
+        # ========================================================
+        self.btn_fetch_res = QtWidgets.QPushButton(' Trazer da aba "Resolução"')
+        self.btn_fetch_res.setIcon(QtGui.QIcon.fromTheme("go-down")) # Ícone visual de "puxar" ou "importar"
+        
+        lyt_sens_px = QtWidgets.QHBoxLayout()
+        lyt_sens_px.addWidget(self.spin_util_sens_w)
+        lyt_sens_px.addWidget(QtWidgets.QLabel("x"))
+        lyt_sens_px.addWidget(self.spin_util_sens_h)
+        lyt_sens_px.addWidget(self.btn_fetch_res) # Adiciona o botão ao lado dos campos
+        lyt_sens_px.addStretch() # Empurra tudo para a esquerda para não ficar esticado
+        # ========================================================
+        # ---> FIM DO CÓDIGO NOVO
+        # ========================================================
+        
+        self.spin_util_cap_w = QtWidgets.QDoubleSpinBox(); self.spin_util_cap_w.setRange(1, 500); self.spin_util_cap_w.setSuffix(" cm"); self.spin_util_cap_w.setValue(45.0)
+        self.spin_util_target_dpi = QtWidgets.QSpinBox(); self.spin_util_target_dpi.setRange(50, 2400); self.spin_util_target_dpi.setSuffix(" DPI"); self.spin_util_target_dpi.setValue(300)
+        
+        self.lbl_util_result = QtWidgets.QLabel("<b>Resultado:</b> -")
+        self.lbl_util_result.setStyleSheet("color: #27ae60; font-size: 11pt;")
+        
+        lyt_util.addRow("Objetivo do Cálculo:", self.combo_calc_util_target)
+        lyt_util.addRow("Predefinição do Sensor:", self.combo_util_mp_preset)
+        lyt_util.addRow("Proporção do Sensor (Razão):", self.combo_util_aspect_ratio)
+        lyt_util.addRow("Resolução Física (Px):", lyt_sens_px)
+        lyt_util.addRow("Largura Capturada na Mesa:", self.spin_util_cap_w)
+        lyt_util.addRow("DPI Real Desejado:", self.spin_util_target_dpi)
+        lyt_util.addRow("", self.lbl_util_result)
+        self.calc_tabs.addTab(tab_util, "Aproveitamento")
+
+        # =========================================================
+        # SUB-ABA 3: ÓTICA E ESPAÇO FÍSICO
+        # =========================================================
+        tab_opt = QtWidgets.QWidget()
+        lyt_opt = QtWidgets.QFormLayout(tab_opt)
+        
+        lbl_info_opt = QtWidgets.QLabel("<b>Geometria Espacial da Lente</b><br><small>Planeja a montagem física da estativa ou do berço (Altura x Lente).</small>")
+        lyt_opt.addRow(lbl_info_opt)
+        
+        self.combo_calc_opt_target = QtWidgets.QComboBox()
+        self.combo_calc_opt_target.addItems([
+            "1. Calcular Distância/Altura da Câmera", 
+            "2. Calcular Distância Focal da Lente"
+        ])
+        
+        self.spin_opt_sens_w = QtWidgets.QDoubleSpinBox(); self.spin_opt_sens_w.setRange(1, 100); self.spin_opt_sens_w.setSuffix(" mm"); self.spin_opt_sens_w.setValue(23.5)
+        self.spin_opt_fov_w = QtWidgets.QDoubleSpinBox(); self.spin_opt_fov_w.setRange(1, 500); self.spin_opt_fov_w.setSuffix(" cm"); self.spin_opt_fov_w.setValue(45.0)
+        
+        # ========================================================
+        # ---> INÍCIO DO CÓDIGO NOVO (Botão de Importação FOV)
+        # ========================================================
+        self.btn_fetch_fov = QtWidgets.QPushButton(' Trazer da aba "Aproveitamento"')
+        self.btn_fetch_fov.setIcon(QtGui.QIcon.fromTheme("go-down"))
+        
+        lyt_opt_fov = QtWidgets.QHBoxLayout()
+        lyt_opt_fov.addWidget(self.spin_opt_fov_w)
+        lyt_opt_fov.addWidget(self.btn_fetch_fov)
+        lyt_opt_fov.addStretch()
+        # ========================================================
+        # ---> FIM DO CÓDIGO NOVO
+        # ========================================================
+        
+        self.spin_opt_focal = QtWidgets.QDoubleSpinBox(); self.spin_opt_focal.setRange(1, 1000); self.spin_opt_focal.setSuffix(" mm"); self.spin_opt_focal.setValue(50.0)
+        self.spin_opt_dist = QtWidgets.QDoubleSpinBox(); self.spin_opt_dist.setRange(1, 1000); self.spin_opt_dist.setSuffix(" cm"); self.spin_opt_dist.setValue(100.0)
+        
+        self.lbl_opt_result = QtWidgets.QLabel("<b>Resultado:</b> -")
+        self.lbl_opt_result.setStyleSheet("color: #8e44ad; font-size: 11pt;")
+        
+        lyt_opt.addRow("Objetivo do Cálculo:", self.combo_calc_opt_target)
+        lyt_opt.addRow("Largura do Sensor:", self.spin_opt_sens_w)
+        lyt_opt.addRow("Campo de Visão (Mesa):", lyt_opt_fov)
+        lyt_opt.addRow("Distância Focal (Lente):", self.spin_opt_focal)
+        lyt_opt.addRow("Distância da Câmera:", self.spin_opt_dist)
+        lyt_opt.addRow("", self.lbl_opt_result)
+        self.calc_tabs.addTab(tab_opt, "Ótica")
+        
+
+        # =========================================================
+        # SUB-ABA 5: ESTIMATIVA DE ARQUIVOS E STORAGE
+        # =========================================================
+        tab_files = QtWidgets.QWidget()
+        lyt_files = QtWidgets.QFormLayout(tab_files)
+        
+        lbl_info_files = QtWidgets.QLabel("<b>Planejamento de Armazenamento (Storage)</b><br><small>Estime o peso dos arquivos finais no disco rígido variando o formato de compressão e o tamanho do documento.</small>")
+        lbl_info_files.setWordWrap(True)
+        lyt_files.addRow(lbl_info_files)
+
+        # 1. Combobox do Tipo Documental (com as dimensões embutidas no UserData)
+        self.combo_file_doc = QtWidgets.QComboBox()
+        doc_types = [
+            ("Folha de papel - A4 (210x297 mm)", (21.0, 29.7)),
+            ("Folha de papel - A3 (297x420 mm)", (29.7, 42.0)),
+            ("Folha de papel - A2 (420x594 mm)", (42.0, 59.4)),
+            ("Folha de papel - Letter US (216x279 mm)", (21.6, 27.9)),
+            ("Folha de papel - Legal BR (216x330 mm)", (21.6, 33.0)),
+            ("Página de jornal moderno (380x560 mm)", (38.0, 56.0)),
+            ("Página de tabloide (289x380 mm)", (28.9, 38.0)),
+            ("Revista comum (210x275 mm)", (21.0, 27.5)),
+            ("Carta Colonial / Fólio Avulso (215x315 mm)", (21.5, 31.5)),
+            ("Livro de Registro / Ata (220x340 mm)", (22.0, 34.0)),
+            ("Fotografia Retrato (102x152 mm)", (10.2, 15.2)),
+            ("Planta Histórica (560x760 mm)", (56.0, 76.0))
+        ]
+        for name, dimensions in doc_types:
+            self.combo_file_doc.addItem(name, userData=dimensions)
+
+        # 2. Combobox de DPI
+        self.combo_file_dpi = QtWidgets.QComboBox()
+        self.combo_file_dpi.addItems(["150 DPI (Acesso Rápido)", "300 DPI (Padrão Arquivístico)", "400 DPI (Alta Qualidade)", "600 DPI (Preservação/Fine Art)", "1200 DPI (Microfilmagem)"])
+        self.combo_file_dpi.setCurrentIndex(1) # Seleciona 300 DPI por padrão
+
+        # 3. Combobox de Modo de Cor (Fator multiplicador de canais na memória)
+        self.combo_file_color = QtWidgets.QComboBox()
+        self.combo_file_color.addItem("Colorido (RGB 24-bit)", 3.0)
+        self.combo_file_color.addItem("Tons de Cinza (8-bit)", 1.0)
+        self.combo_file_color.addItem("Preto e Branco Binarizado (1-bit)", 0.125)
+
+        # 4. Combobox de Formato e Compressão (Fator multiplicador do algoritmo)
+        self.combo_file_format = QtWidgets.QComboBox()
+        self.combo_file_format.addItem("TIFF (Sem compressão - Preservação Máxima)", 1.0)
+        self.combo_file_format.addItem("TIFF (LZW Lossless)", 0.6)
+        self.combo_file_format.addItem("PNG (Lossless otimizado)", 0.5)
+        self.combo_file_format.addItem("JPG (100% Qualidade - Perda Mínima)", 0.15)
+        self.combo_file_format.addItem("JPG (85% Qualidade - Recomendado)", 0.08)
+        self.combo_file_format.addItem("JPG (70% Qualidade - Web/Acesso)", 0.04)
+        self.combo_file_format.setCurrentIndex(4) # Seleciona JPG 85% por padrão
+
+        # Label de Resultados
+        self.lbl_file_result = QtWidgets.QLabel("<b>Estimativas:</b> -")
+        self.lbl_file_result.setStyleSheet("color: #d35400; font-size: 11pt; padding-top: 10px;")
+
+        lyt_files.addRow("Tamanho do Documento:", self.combo_file_doc)
+        lyt_files.addRow("Resolução Ótica (DPI):", self.combo_file_dpi)
+        lyt_files.addRow("Modo de Cor do Scan:", self.combo_file_color)
+        lyt_files.addRow("Formato de Saída:", self.combo_file_format)
+        lyt_files.addRow("", self.lbl_file_result)
+        
+        self.calc_tabs.addTab(tab_files, "Guia de Arquivos")
+
+        # =========================================================
+        # SUB-ABA 4: GUIA DE DIMENSÕES
+        # =========================================================
+        tab_dim = QtWidgets.QWidget()
+        
+        # Envolvemos em um ScrollArea para evitar esmagamento em telas menores
+        scroll_dim = QtWidgets.QScrollArea()
+        scroll_dim.setWidgetResizable(True)
+        scroll_dim.setFrameShape(QtWidgets.QFrame.NoFrame)
+        
+        dim_container = QtWidgets.QWidget()
+        lyt_dim = QtWidgets.QVBoxLayout(dim_container)
+        
+        lbl_info_dim = QtWidgets.QLabel("<b>Guia de Dimensões Físicas</b><br><small>Tabela de referência rápida de tamanhos de acervos comuns para auxiliar no cálculo de enquadramento.</small>")
+        lbl_info_dim.setWordWrap(True)
+        lyt_dim.addWidget(lbl_info_dim)
+        
+        # Função auxiliar para criar grupos com alinhamento perfeito de colunas
+        def create_dim_group(title, items):
+            grp = QtWidgets.QGroupBox(title)
+            grp.setStyleSheet("QGroupBox { font-weight: bold; } QLabel { font-weight: normal; }")
+            lyt = QtWidgets.QGridLayout(grp)
+            lyt.setColumnStretch(0, 1) # A coluna dos nomes empurra as medidas para a direita
+            lyt.setColumnStretch(1, 0) # A coluna das medidas fica ajustada e contida
+            lyt.setHorizontalSpacing(40)
+            
+            for row, (name, size) in enumerate(items):
+                lbl_name = QtWidgets.QLabel(name)
+                lbl_size = QtWidgets.QLabel(size)
+                # Estiliza os números como código (monospace) e em azul para contraste e alinhamento
+                lbl_size.setStyleSheet("color: #2980b9; font-family: monospace; font-size: 10pt;")
+                lbl_size.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                
+                lyt.addWidget(lbl_name, row, 0)
+                lyt.addWidget(lbl_size, row, 1)
+                
+            return grp
+
+        # Itens do Grupo 1
+        items_g1 = [
+            ("Página de jornal moderno", "380 x 560 mm"),
+            ("Página de tabloide", "289 x 380 mm"),
+            ("Revista comum", "210 x 275 mm"),
+            ("Página central revista comum", "420 x 275 mm")
+        ]
+        lyt_dim.addWidget(create_dim_group("1. Imprensa e Publicações Coloquiais", items_g1))
+        
+        # Itens do Grupo 2
+        items_g2 = [
+            ("Folha de papel - A4", "210 x 297 mm"),
+            ("Folha de papel - A3", "297 x 420 mm"),
+            ("Folha de papel - A2", "420 x 594 mm"),
+            ("Folha de papel - letter US", "216 x 279 mm"),
+            ("Folha de papel - legal BR", "216 x 330 mm"),
+            ("Envelope de carta comum", "114 x 162 mm")
+        ]
+        lyt_dim.addWidget(create_dim_group("2. Papelaria e Escritório Padrão", items_g2))
+        
+        # Itens do Grupo 3
+        items_g3 = [
+            ("Fotografia comum - retrato", "102 x 152 mm"),
+            ("Fotografia comum - paisagem", "152 x 102 mm"),
+            ("Foto para documentos", "30 x 40 mm"),
+            ("Foto de passaporte", "35 x 45 mm")
+        ]
+        lyt_dim.addWidget(create_dim_group("3. Fotografia e Identificação", items_g3))
+        
+        # Itens do Grupo 4
+        items_g4 = [
+            ("Carta Colonial / Fólio Avulso", "215 x 315 mm"),
+            ("Livro de Registro / Livro de Ata", "220 x 340 mm"),
+            ("Cartão Postal Antigo - Século XIX/XX", "90 x 140 mm"),
+            ("Placa Fotográfica de Vidro - Pequena", "90 x 120 mm"),
+            ("Placa Fotográfica de Vidro - Grande", "130 x 180 mm"),
+            ("Planta / Mapa Histórico - Imperial", "560 x 760 mm"),
+            ("Diploma / Manifesto em Pergaminho", "400 x 500 mm"),
+            ("Prontuário / Caderneta de Identidade", "110 x 150 mm")
+        ]
+        lyt_dim.addWidget(create_dim_group("4. Documentos Históricos e Memória", items_g4))
+        
+        lyt_dim.addStretch() # Empurra todos os grupos para o topo
+        
+        scroll_dim.setWidget(dim_container)
+        
+        # Layout base da aba para receber o ScrollArea sem margens extras
+        lyt_tab_dim = QtWidgets.QVBoxLayout(tab_dim)
+        lyt_tab_dim.setContentsMargins(0, 0, 0, 0)
+        lyt_tab_dim.addWidget(scroll_dim)
+        
+        self.calc_tabs.addTab(tab_dim, "Guia de Dimensões")
+
+        # Conecta os sinais para cálculo em tempo real
+        self.combo_file_doc.currentIndexChanged.connect(self._run_calc_files)
+        self.combo_file_dpi.currentIndexChanged.connect(self._run_calc_files)
+        self.combo_file_color.currentIndexChanged.connect(self._run_calc_files)
+        self.combo_file_format.currentIndexChanged.connect(self._run_calc_files)
+                
+        # =========================================================
+        # FECHAMENTO DA ABA PRINCIPAL (Manter as linhas originais a partir daqui)
+        # =========================================================
+        # Adiciona a aba mestre ao layout principal das preferências
+        self.tabs.addTab(tab, "Calculadora")
+
+        # Conecta os sinais de alternância
+        self.combo_calc_res_target.currentIndexChanged.connect(self._toggle_calc_res)
+        self.combo_calc_util_target.currentIndexChanged.connect(self._toggle_calc_util)
+        self.combo_calc_opt_target.currentIndexChanged.connect(self._toggle_calc_opt)
+        
+        # ---> INSERIR AQUI: Conexões do Seletor de Documento <---
+        self.combo_res_doc_preset.currentIndexChanged.connect(self._on_res_doc_preset_changed)
+        self.spin_res_doc_w.valueChanged.connect(self._set_res_doc_custom)
+        self.spin_res_doc_h.valueChanged.connect(self._set_res_doc_custom)
+        # --------------------------------------------------------
+        
+        # Conecta os sinais de atualização em tempo real
+        for widget in [self.spin_res_doc_w, self.spin_res_doc_h, self.spin_res_dpi, self.spin_res_mp]:
+            widget.valueChanged.connect(self._run_calc_res)
+            
+        # ---> INSERIR ESTAS DUAS LINHAS AQUI <---
+        # Garante que ao digitar um novo tamanho de papel, o aproveitamento seja recalculado em background
+        self.spin_res_doc_w.valueChanged.connect(self._run_calc_util)
+        self.spin_res_doc_h.valueChanged.connect(self._run_calc_util)
+        # ----------------------------------------
+            
+        for widget in [self.spin_util_sens_w, self.spin_util_sens_h, self.spin_util_cap_w, self.spin_util_target_dpi]:
+            widget.valueChanged.connect(self._run_calc_util)
+            
+        for widget in [self.spin_opt_sens_w, self.spin_opt_fov_w, self.spin_opt_focal, self.spin_opt_dist]:
+            widget.valueChanged.connect(self._run_calc_opt)
+            
+        # ---> INSERIR AQUI: Conexões do Seletor de Megapixels <---
+        self.combo_util_mp_preset.currentIndexChanged.connect(self._on_util_mp_preset_changed)
+        self.combo_util_aspect_ratio.currentIndexChanged.connect(self._on_util_mp_preset_changed) # <--- LINHA NOVA
+        self.spin_util_sens_w.valueChanged.connect(self._set_util_mp_custom)
+        self.spin_util_sens_h.valueChanged.connect(self._set_util_mp_custom)
+        # --------------------------------------------------------
+        self.btn_fetch_res.clicked.connect(self._fetch_resolution_from_tab1) # <--- LINHA NOVA AQUI
+        
+        # ---> INSERIR AQUI <---
+        self.btn_fetch_fov.clicked.connect(self._fetch_fov_from_tab2)
+        # ----------------------
+
+        # Força o estado inicial das interfaces
+        self._toggle_calc_res()
+        self._toggle_calc_util()
+        self._toggle_calc_opt()
+
+    def _fetch_resolution_from_tab1(self):
+        """Busca as dimensões calculadas na sub-aba de Resolução e aplica na auditoria de Aproveitamento."""
+        idx = self.combo_calc_res_target.currentIndex()
+        w = self.spin_res_doc_w.value()
+        h = self.spin_res_doc_h.value()
+        
+        # Refaz o cálculo rapidamente baseado no que estiver selecionado na primeira aba
+        if idx == 0:
+            dpi = self.spin_res_dpi.value()
+            res = CameraCalculator.calc_resolution_from_dpi(w, h, dpi)
+        else:
+            mp = self.spin_res_mp.value()
+            res = CameraCalculator.calc_dpi_from_resolution(w, h, mp)
+            
+        px_w = int(res.get('px_w', 0))
+        px_h = int(res.get('px_h', 0))
+        
+        if px_w > 0 and px_h > 0:
+            # 1. Muda a predefinição para "Resolução Customizada..." (Índice 0)
+            self.combo_util_mp_preset.blockSignals(True)
+            self.combo_util_mp_preset.setCurrentIndex(0)
+            self.combo_util_mp_preset.blockSignals(False)
+            
+            # 2. Preenche os campos (o setValue acionará o recálculo do aproveitamento)
+            self.spin_util_sens_w.setValue(px_w)
+            self.spin_util_sens_h.setValue(px_h)        
+
+            # 3. Preenche a "Largura Capturada na Mesa" com a maior dimensão do documento
+            maior_lado = max(w, h)
+            self.spin_util_cap_w.setValue(w) # maior_lado)        
 
     def _build_source_tab(self):
         tab = QtWidgets.QWidget()
@@ -364,6 +805,204 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.tabs.addTab(tab, "Dispositivos")
         self._on_source_changed(self.combo_source.currentText())
 
+    def _run_calc_files(self):
+        # 1. Extrai as dimensões do UserData do documento selecionado
+        dimensions = self.combo_file_doc.currentData()
+        if not dimensions: return
+        w_cm, h_cm = dimensions
+
+        # 2. Extrai o valor inteiro do DPI (Limpando o texto " DPI (Nome)")
+        dpi_text = self.combo_file_dpi.currentText()
+        dpi_val = int(dpi_text.split(" ")[0])
+
+        # 3. Extrai os fatores matemáticos inseridos no UserData
+        color_factor = self.combo_file_color.currentData()
+        compression_factor = self.combo_file_format.currentData()
+
+        # 4. Envia para o motor isolado
+        res = CameraCalculator.calc_estimated_file_size(w_cm, h_cm, dpi_val, color_factor, compression_factor)
+
+        # 5. Formata e exibe o resultado
+        texto_resultado = (
+            f"<b>Peso estimado por imagem:</b> {res['mb_per_image']} MB<br>"
+            f"<b>Peso estimado por lote (1000 págs):</b> {res['gb_per_1000']} GB"
+        )
+        self.lbl_file_result.setText(texto_resultado)
+    
+    # ==========================================
+    # LÓGICAS DA CALCULADORA
+    # ==========================================
+
+    def _fetch_fov_from_tab2(self):
+        """Busca a 'Largura Capturada na Mesa' da sub-aba Aproveitamento e aplica no Campo de Visão da Óptica."""
+        # Lê o valor atual da aba Aproveitamento
+        w = self.spin_util_cap_w.value()
+        
+        if w > 0:
+            # O setValue aciona o valueChanged, que por sua vez chama _run_calc_opt automaticamente
+            self.spin_opt_fov_w.setValue(w)
+            
+    def _on_util_mp_preset_changed(self):
+        """Preenche a resolução física cruzando os Megapixels com a Proporção selecionada."""
+        mp_val = self.combo_util_mp_preset.currentData()
+        ratio_val = self.combo_util_aspect_ratio.currentData()
+        
+        if mp_val and ratio_val:
+            import math
+            
+            # 1 Megapixel = 1.000.000 de pixels
+            total_pixels = mp_val * 1_000_000
+            
+            # Cálculo usando a razão dinâmica geométrica
+            # Área = razão * h * h  =>  h = sqrt(Área / razão)
+            h = math.sqrt(total_pixels / ratio_val)
+            w = h * ratio_val
+            
+            # Bloqueia sinais para não acionar o evento _set_util_mp_custom na via reversa
+            self.spin_util_sens_w.blockSignals(True)
+            self.spin_util_sens_h.blockSignals(True)
+            
+            self.spin_util_sens_w.setValue(int(round(w)))
+            self.spin_util_sens_h.setValue(int(round(h)))
+            
+            self.spin_util_sens_w.blockSignals(False)
+            self.spin_util_sens_h.blockSignals(False)
+            
+            # Refaz o cálculo principal da aba com as novas dimensões
+            self._run_calc_util()
+
+    def _set_util_mp_custom(self):
+        """Se o usuário digitar os pixels na mão, volta o combobox para 'Customizada'."""
+        if self.combo_util_mp_preset.currentIndex() != 0:
+            self.combo_util_mp_preset.blockSignals(True)
+            self.combo_util_mp_preset.setCurrentIndex(0)
+            self.combo_util_mp_preset.blockSignals(False)
+        
+    def _on_res_doc_preset_changed(self):
+        """Preenche automaticamente os campos ao escolher um documento da lista."""
+        dimensions = self.combo_res_doc_preset.currentData()
+        if dimensions:
+            w_cm, h_cm = dimensions
+            
+            # Bloqueia os sinais para não acionar o evento _set_res_doc_custom de forma cruzada
+            self.spin_res_doc_w.blockSignals(True)
+            self.spin_res_doc_h.blockSignals(True)
+            
+            self.spin_res_doc_w.setValue(w_cm)
+            self.spin_res_doc_h.setValue(h_cm)
+            
+            self.spin_res_doc_w.blockSignals(False)
+            self.spin_res_doc_h.blockSignals(False)
+            
+            # Refaz o cálculo com as novas dimensões
+            self._run_calc_res()
+            # ---> INSERIR ESTA LINHA AQUI <---
+            self._run_calc_util() # Mantém a auditoria de aproveitamento sincronizada
+            # ---------------------------------
+
+    def _set_res_doc_custom(self):
+        """Se o usuário digitar na mão, volta o combobox para 'Tamanho Customizado...'."""
+        if self.combo_res_doc_preset.currentIndex() != 0:
+            self.combo_res_doc_preset.blockSignals(True)
+            self.combo_res_doc_preset.setCurrentIndex(0)
+            self.combo_res_doc_preset.blockSignals(False)
+    
+    def _toggle_calc_res(self):
+        idx = self.combo_calc_res_target.currentIndex()
+        if idx == 0:  # Calcular Resolução
+            self.spin_res_dpi.setEnabled(True)
+            self.spin_res_mp.setEnabled(False)
+        else:         # Calcular DPI
+            self.spin_res_dpi.setEnabled(False)
+            self.spin_res_mp.setEnabled(True)
+        self._run_calc_res()
+
+    def _run_calc_res(self):
+        idx = self.combo_calc_res_target.currentIndex()
+        w = self.spin_res_doc_w.value()
+        h = self.spin_res_doc_h.value()
+        
+        if idx == 0:
+            dpi = self.spin_res_dpi.value()
+            res = CameraCalculator.calc_resolution_from_dpi(w, h, dpi)
+            # Atualiza o campo desativado para feedback visual e o Label
+            self.spin_res_mp.blockSignals(True)
+            self.spin_res_mp.setValue(res['mp'])
+            self.spin_res_mp.blockSignals(False)
+            self.lbl_res_result.setText(f"<b>Dimensões:</b> {res['px_w']} x {res['px_h']} px<br><b>Exigência:</b> {res['mp']} Megapixels")
+        else:
+            mp = self.spin_res_mp.value()
+            res = CameraCalculator.calc_dpi_from_resolution(w, h, mp)
+            self.spin_res_dpi.blockSignals(True)
+            self.spin_res_dpi.setValue(res['dpi'])
+            self.spin_res_dpi.blockSignals(False)
+            self.lbl_res_result.setText(f"<b>Dimensões Estimadas:</b> {res['px_w']} x {res['px_h']} px<br><b>DPI Máximo Atingível:</b> {res['dpi']} DPI")
+
+    def _toggle_calc_util(self):
+        idx = self.combo_calc_util_target.currentIndex()
+        if idx == 0:  # Auditar DPI
+            self.spin_util_cap_w.setEnabled(True)
+            self.spin_util_target_dpi.setEnabled(False)
+        else:         # Calcular Enquadramento
+            self.spin_util_cap_w.setEnabled(False)
+            self.spin_util_target_dpi.setEnabled(True)
+        self._run_calc_util()
+
+    def _run_calc_util(self):
+        idx = self.combo_calc_util_target.currentIndex()
+        sw = self.spin_util_sens_w.value()
+        sh = self.spin_util_sens_h.value()
+        doc_w = self.spin_res_doc_w.value() # Busca do documento na aba 1
+        doc_h = self.spin_res_doc_h.value()
+        
+        if idx == 0:
+            cap_w = self.spin_util_cap_w.value()
+            res = CameraCalculator.calc_sensor_utilization(sw, sh, cap_w, doc_w, doc_h)
+            self.lbl_util_result.setText(f"<b>DPI Real no Papel:</b> {res['real_dpi']} DPI<br><b>Aproveitamento Útil:</b> {res['useful_mp']} MP ({res['utilization_pct']}%)")
+        else:
+            dpi = self.spin_util_target_dpi.value()
+            ideal_w = CameraCalculator.calc_ideal_capture_width(sw, dpi)
+            self.spin_util_cap_w.blockSignals(True)
+            self.spin_util_cap_w.setValue(ideal_w)
+            self.spin_util_cap_w.blockSignals(False)
+            # Roda a auditoria para entregar a % de desperdício mesmo no modo Enquadramento
+            auditoria = CameraCalculator.calc_sensor_utilization(sw, sh, ideal_w, doc_w, doc_h)
+            
+            self.lbl_util_result.setText(
+                f"<b>Área de Captura Ideal:</b> {ideal_w} cm de largura na mesa<br>"
+                f"<small>Aproveitamento Útil: {auditoria['useful_mp']} MP ({auditoria['utilization_pct']}%)</small>"
+            )
+
+    def _toggle_calc_opt(self):
+        idx = self.combo_calc_opt_target.currentIndex()
+        if idx == 0:  # Calcular Distância
+            self.spin_opt_focal.setEnabled(True)
+            self.spin_opt_dist.setEnabled(False)
+        else:         # Calcular Lente
+            self.spin_opt_focal.setEnabled(False)
+            self.spin_opt_dist.setEnabled(True)
+        self._run_calc_opt()
+
+    def _run_calc_opt(self):
+        idx = self.combo_calc_opt_target.currentIndex()
+        sens_w = self.spin_opt_sens_w.value()
+        fov_w = self.spin_opt_fov_w.value()
+        
+        if idx == 0:
+            focal = self.spin_opt_focal.value()
+            dist = CameraCalculator.calc_distance(sens_w, focal, fov_w)
+            self.spin_opt_dist.blockSignals(True)
+            self.spin_opt_dist.setValue(dist)
+            self.spin_opt_dist.blockSignals(False)
+            self.lbl_opt_result.setText(f"<b>Distância / Altura Necessária:</b> {dist} cm")
+        else:
+            dist = self.spin_opt_dist.value()
+            focal = CameraCalculator.calc_focal_length(sens_w, dist, fov_w)
+            self.spin_opt_focal.blockSignals(True)
+            self.spin_opt_focal.setValue(focal)
+            self.spin_opt_focal.blockSignals(False)
+            self.lbl_opt_result.setText(f"<b>Lente Recomendada:</b> {focal} mm")
+            
     def _toggle_scanner_options(self, mode_text: str):
         if hasattr(self, 'grp_sane_opts'):
             is_single = ("Única" in mode_text or "Plana" in mode_text)
@@ -1598,6 +2237,21 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.spin_checker_angle.setRange(45, 180)
         self.spin_checker_angle.setSuffix("°")
         
+        # ---> INÍCIO DA INSERÇÃO: Controle de Zoom da Retificação <---
+        self.slider_checker_zoom = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.slider_checker_zoom.setRange(-200, 200)
+        self.slider_checker_zoom.setValue(0)
+        self.slider_checker_zoom.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        
+        self.lbl_checker_zoom = QtWidgets.QLabel(f"{self.slider_checker_zoom.value() / 100.0:+.2f}X")
+        self.lbl_checker_zoom.setMinimumWidth(55)
+        self.slider_checker_zoom.valueChanged.connect(lambda v: self.lbl_checker_zoom.setText(f"{v / 100.0:+.2f}X"))
+        
+        zoom_layout = QtWidgets.QHBoxLayout()
+        zoom_layout.addWidget(self.lbl_checker_zoom)
+        zoom_layout.addWidget(self.slider_checker_zoom)
+        # ---> FIM DA INSERÇÃO <---
+        
         self.spin_checker_x = QtWidgets.QSpinBox()
         self.spin_checker_x.setRange(2, 20)
         
@@ -1623,6 +2277,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
         lyt_rectify.addRow("Perfil de Calibração:", profile_layout)
         lyt_rectify.addRow("Angular da câmera (Ângulo de visão):", self.spin_checker_angle)
+        lyt_rectify.addRow("Zoom Pós-Retificação:", zoom_layout) # <--- ADICIONAR ESTA LINHA AQUI
         lyt_rectify.addRow("Linhas horizontais (Interseções internas):", self.spin_checker_x)
         lyt_rectify.addRow("Colunas verticais (Interseções internas):", self.spin_checker_y)
         lyt_rectify.addRow("Tamanho do quadro (Quadrado do xadrez):", self.spin_checker_size)
@@ -1643,16 +2298,25 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.progress_calib.setValue(0)
         self.progress_calib.setVisible(False) # Escondida até o processo começar
         
-        # ---> CORREÇÃO: Adicionado o prefixo 'self.' no botão
+        # ---> INÍCIO DA ALTERAÇÃO: Criar layout horizontal para os botões
+        lyt_calib_btns = QtWidgets.QHBoxLayout()
+        
         self.btn_exec_calib = QtWidgets.QPushButton(" Executar Calibração da Lente")
         self.btn_exec_calib.setIcon(QtGui.QIcon.fromTheme("system-run"))
         self.btn_exec_calib.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 6px;")
-        
-        # Conexão com o método que iniciará a Thread
         self.btn_exec_calib.clicked.connect(self._start_fisheye_calibration)
         
+        self.btn_reset_rectify = QtWidgets.QPushButton(" Padrões de Fábrica")
+        self.btn_reset_rectify.setIcon(QtGui.QIcon.fromTheme("edit-clear"))
+        self.btn_reset_rectify.setStyleSheet("background-color: #7f8c8d; color: white; font-weight: bold; padding: 6px;")
+        self.btn_reset_rectify.clicked.connect(self._reset_rectify_defaults)
+        
+        lyt_calib_btns.addWidget(self.btn_exec_calib)
+        lyt_calib_btns.addWidget(self.btn_reset_rectify)
+        
         lyt_exec_calib.addWidget(self.lbl_calib_status)
-        lyt_exec_calib.addWidget(self.btn_exec_calib)
+        lyt_exec_calib.addLayout(lyt_calib_btns)
+        # ---> FIM DA ALTERAÇÃO
         
         layout.addWidget(self.grp_exec_calib)
         
@@ -1696,6 +2360,14 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.chk_use_rectify.toggled.connect(self._on_use_rectify_toggled)
         
         self.tabs.addTab(tab, "Retificar")
+
+    def _reset_rectify_defaults(self):
+        """Restaura os parâmetros matemáticos originais da Retificação."""
+        self.spin_checker_angle.setValue(170)
+        self.slider_checker_zoom.setValue(0)
+        self.spin_checker_x.setValue(9)
+        self.spin_checker_y.setValue(6)
+        self.spin_checker_size.setValue(500)
 
     # E adicione este método na classe:
     def _on_angle_changed(self, new_angle):
@@ -1766,6 +2438,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             self.spin_checker_y.setValue(6)
             self.spin_checker_size.setValue(150)
             self.line_checker_path.setText("")
+            if hasattr(self, 'slider_checker_zoom'): # <--- Reset do Zoom
+                self.slider_checker_zoom.setValue(0)
             return
             
         angle = self.spin_checker_angle.value()
@@ -1773,7 +2447,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         profiles_db = self.settings.get("fisheye_profiles", {})
         
         # Padrões de Fallback caso o nó ou sub-nó específico não existam
-        val_x, val_y, val_size, val_path = 9, 6, 150, ""
+        val_x, val_y, val_size, val_path, val_zoom = 9, 6, 150, "", 0
         
         if profile_name in profiles_db:
             cameras_dict = profiles_db[profile_name].get("cameras", {})
@@ -1783,21 +2457,26 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                 val_y = config.get("checker_y", 6)
                 val_size = config.get("checker_size", 150)
                 val_path = config.get("checker_path", "")
+                val_zoom = config.get("checker_zoom", 0) # <--- BUSCA O VALOR SALVO AQUI
                 
         # Blindagem de Sinais para evitar disparos recursivos durante atualização forçada da UI
         self.spin_checker_x.blockSignals(True)
         self.spin_checker_y.blockSignals(True)
         self.spin_checker_size.blockSignals(True)
+        self.slider_checker_zoom.blockSignals(True) # <--- BLINDA O SINAL DO ZOOM
         
         self.spin_checker_x.setValue(val_x)
         self.spin_checker_y.setValue(val_y)
         self.spin_checker_size.setValue(val_size)
         self.line_checker_path.setText(val_path)
         
+        self.slider_checker_zoom.setValue(val_zoom) # <--- ATUALIZA O SLIDER
+        self.lbl_checker_zoom.setText(f"{val_zoom / 100.0:+.2f}X") # <--- ATUALIZA O LABEL VISUAL
+        
         self.spin_checker_x.blockSignals(False)
         self.spin_checker_y.blockSignals(False)
         self.spin_checker_size.blockSignals(False)
-
+        self.slider_checker_zoom.blockSignals(False) # <--- DESBLOQUEIA O SINAL
 
     def _start_fisheye_calibration(self):
         profile_name = self.combo_checker_profile.currentText().strip()
@@ -1971,8 +2650,9 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         layout.addStretch()
         
         # --- ÁREA 3: MATRIZ INTRÍNSECA (GEOMETRIA K) ---
-        self.grp_sim_k = QtWidgets.QGroupBox("3. Geometria Óptica (Matriz K)")
-        lyt_sim_k = QtWidgets.QFormLayout(self.grp_sim_k)
+        self.grp_sim_k = QtWidgets.QGroupBox("3. Geometria Ótica (Matriz K)")
+        # Alterado de QFormLayout para QGridLayout
+        lyt_sim_k = QtWidgets.QGridLayout(self.grp_sim_k)
         
         def create_sim_slider(min_val, max_val, default_val):
             s = QtWidgets.QSlider(QtCore.Qt.Horizontal)
@@ -1982,14 +2662,19 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             return s
             
         self.slider_sim_fov = create_sim_slider(30, 220, 170)
+        # Novo Slider de Zoom (-200 a 200 para representar -2.00x a +2.00x)
+        self.slider_sim_zoom = create_sim_slider(-200, 200, 0)
         self.slider_sim_pan = create_sim_slider(-500, 500, 0)
         self.slider_sim_tilt = create_sim_slider(-500, 500, 0)
         
         self.lbl_sim_fov = QtWidgets.QLabel(f"{self.slider_sim_fov.value()}°")
+        # Label formatada para exibir o sinal de + ou - com 2 casas decimais
+        self.lbl_sim_zoom = QtWidgets.QLabel(f"{self.slider_sim_zoom.value() / 100.0:+.2f}X")
         self.lbl_sim_pan = QtWidgets.QLabel(f"{self.slider_sim_pan.value()} px")
         self.lbl_sim_tilt = QtWidgets.QLabel(f"{self.slider_sim_tilt.value()} px")
         
         self.slider_sim_fov.valueChanged.connect(lambda v: self.lbl_sim_fov.setText(f"{v}°"))
+        self.slider_sim_zoom.valueChanged.connect(lambda v: self.lbl_sim_zoom.setText(f"{v / 100.0:+.2f}X"))
         self.slider_sim_pan.valueChanged.connect(lambda v: self.lbl_sim_pan.setText(f"{v} px"))
         self.slider_sim_tilt.valueChanged.connect(lambda v: self.lbl_sim_tilt.setText(f"{v} px"))
         
@@ -2000,17 +2685,32 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             h.addWidget(sld)
             return h
 
-        lyt_sim_k.addRow("Ângulo Diagonal (FOV):", wrap_sim_slider(self.lbl_sim_fov, self.slider_sim_fov))
-        lyt_sim_k.addRow("Deslocamento X (Pan):", wrap_sim_slider(self.lbl_sim_pan, self.slider_sim_pan))
-        lyt_sim_k.addRow("Deslocamento Y (Tilt):", wrap_sim_slider(self.lbl_sim_tilt, self.slider_sim_tilt))
+        # Organização em Grid (Linha 0)
+        lyt_sim_k.addWidget(QtWidgets.QLabel("Ângulo Diagonal (FOV):"), 0, 0)
+        lyt_sim_k.addLayout(wrap_sim_slider(self.lbl_sim_fov, self.slider_sim_fov), 0, 1)
+        
+        lyt_sim_k.addWidget(QtWidgets.QLabel("Zoom da Imagem:"), 0, 2)
+        lyt_sim_k.addLayout(wrap_sim_slider(self.lbl_sim_zoom, self.slider_sim_zoom), 0, 3)
+
+        # Organização em Grid (Linha 1)
+        lyt_sim_k.addWidget(QtWidgets.QLabel("Deslocamento X (Pan):"), 1, 0)
+        lyt_sim_k.addLayout(wrap_sim_slider(self.lbl_sim_pan, self.slider_sim_pan), 1, 1)
+        
+        lyt_sim_k.addWidget(QtWidgets.QLabel("Deslocamento Y (Tilt):"), 1, 2)
+        lyt_sim_k.addLayout(wrap_sim_slider(self.lbl_sim_tilt, self.slider_sim_tilt), 1, 3)
+
+        # Força as colunas dos sliders (1 e 3) a ocuparem exatamente 50% do espaço elástico
+        lyt_sim_k.setColumnStretch(1, 1)
+        lyt_sim_k.setColumnStretch(3, 1)
+        lyt_sim_k.setHorizontalSpacing(20) # Espaçamento entre o lado esquerdo e direito
         
         layout.addWidget(self.grp_sim_k)
         
         # --- ÁREA 4: MATRIZ DE DISTORÇÃO (D) ---
         self.grp_sim_d = QtWidgets.QGroupBox("4. Distorção da Lente (Matriz D)")
-        lyt_sim_d = QtWidgets.QFormLayout(self.grp_sim_d)
+        # Alterado de QFormLayout para QGridLayout
+        lyt_sim_d = QtWidgets.QGridLayout(self.grp_sim_d)
         
-        # Sliders multiplicados por 1000 para permitir casas decimais finas (ex: 150 = 0.150)
         self.slider_sim_k1 = create_sim_slider(-1000, 1000, 0)
         self.slider_sim_k2 = create_sim_slider(-1000, 1000, 0)
         
@@ -2020,8 +2720,16 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.slider_sim_k1.valueChanged.connect(lambda v: self.lbl_sim_k1.setText(f"{v / 1000.0:.3f}"))
         self.slider_sim_k2.valueChanged.connect(lambda v: self.lbl_sim_k2.setText(f"{v / 1000.0:.3f}"))
         
-        lyt_sim_d.addRow("Curvatura de Barril (k1):", wrap_sim_slider(self.lbl_sim_k1, self.slider_sim_k1))
-        lyt_sim_d.addRow("Refinamento de Borda (k2):", wrap_sim_slider(self.lbl_sim_k2, self.slider_sim_k2))
+        # Organização em Grid (Linha 0)
+        lyt_sim_d.addWidget(QtWidgets.QLabel("Curvatura de Barril (k1):"), 0, 0)
+        lyt_sim_d.addLayout(wrap_sim_slider(self.lbl_sim_k1, self.slider_sim_k1), 0, 1)
+        
+        lyt_sim_d.addWidget(QtWidgets.QLabel("Refinamento de Borda (k2):"), 0, 2)
+        lyt_sim_d.addLayout(wrap_sim_slider(self.lbl_sim_k2, self.slider_sim_k2), 0, 3)
+
+        lyt_sim_d.setColumnStretch(1, 1)
+        lyt_sim_d.setColumnStretch(3, 1)
+        lyt_sim_d.setHorizontalSpacing(20)
         
         layout.addWidget(self.grp_sim_d)
         
@@ -2037,8 +2745,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         self.btn_sim_save.setIcon(QtGui.QIcon.fromTheme("document-save"))
         self.btn_sim_save.setStyleSheet("background-color: #8e44ad; color: white; font-weight: bold; padding: 6px;")
         
-        # ---> INSERIR AQUI: Novo Botão de Ajustes de Fábrica <---
-        self.btn_sim_reset = QtWidgets.QPushButton("  Ajustes de Fábrica")
+        # ---> INSERIR AQUI: Novo Botão de Padrões de Fábrica <---
+        self.btn_sim_reset = QtWidgets.QPushButton("  Padrões de Fábrica")
         self.btn_sim_reset.setIcon(QtGui.QIcon.fromTheme("edit-clear"))
         self.btn_sim_reset.setStyleSheet("background-color: #7f8c8d; color: white; font-weight: bold; padding: 6px;") # Cor cinzenta
         
@@ -2089,6 +2797,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             # O setValue() aciona automaticamente o signal 'valueChanged', 
             # o que atualiza os rótulos de texto e a janela de preview em tempo real.
             self.slider_sim_fov.setValue(170)
+            self.slider_sim_zoom.setValue(0) # <--- NOVA LINHA
             self.slider_sim_pan.setValue(0)
             self.slider_sim_tilt.setValue(0)
             self.slider_sim_k1.setValue(0)
@@ -2156,6 +2865,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         # ---> INSERIR AQUI: Carregamento dos valores paramétricos
         if hasattr(self, 'slider_sim_fov'):
             self.slider_sim_fov.setValue(data.get("sim_fov", 170))
+            self.slider_sim_zoom.setValue(data.get("sim_zoom", 0)) # <--- NOVA LINHA
             self.slider_sim_pan.setValue(data.get("sim_pan", 0))
             self.slider_sim_tilt.setValue(data.get("sim_tilt", 0))
             self.slider_sim_k1.setValue(data.get("sim_k1", 0))
@@ -2182,6 +2892,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         
         # Conecta os sliders ao método de atualização
         self.slider_sim_fov.valueChanged.connect(self._update_live_preview)
+        self.slider_sim_zoom.valueChanged.connect(self._update_live_preview) # <--- NOVA LINHA
         self.slider_sim_pan.valueChanged.connect(self._update_live_preview)
         self.slider_sim_tilt.valueChanged.connect(self._update_live_preview)
         self.slider_sim_k1.valueChanged.connect(self._update_live_preview)
@@ -2198,6 +2909,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
         if self.preview_window is not None and self.preview_window.isVisible():
             self.preview_window.update_preview(
                 fov_deg=self.slider_sim_fov.value(),
+                zoom_orig=self.slider_sim_zoom.value(), # <--- NOVO PARÂMETRO
                 pan_orig=self.slider_sim_pan.value(),
                 tilt_orig=self.slider_sim_tilt.value(),
                 k1_raw=self.slider_sim_k1.value(),
@@ -3087,7 +3799,8 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                     "checker_x": self.spin_checker_x.value(),
                     "checker_y": self.spin_checker_y.value(),
                     "checker_size": self.spin_checker_size.value(),
-                    "checker_path": self.line_checker_path.text()
+                    "checker_path": self.line_checker_path.text(),
+                    "checker_zoom": self.slider_checker_zoom.value() # <--- ADICIONAR ESTA LINHA AQUI
                 }
 
         # --- Salvar dados da aba Simular (Fish-eye Paramétrico) ---
@@ -3107,6 +3820,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
                     "width": self.spin_sim_width.value(),
                     "height": self.spin_sim_height.value(),
                     "sim_fov": self.slider_sim_fov.value(),
+                    "sim_zoom": self.slider_sim_zoom.value(), # <--- NOVA LINHA
                     "sim_pan": self.slider_sim_pan.value(),
                     "sim_tilt": self.slider_sim_tilt.value(),
                     "sim_k1": self.slider_sim_k1.value(),
@@ -3204,7 +3918,7 @@ class VidyaSettingsDialog(QtWidgets.QDialog):
             f"O Vidya Capture reconhecerá estes parâmetros automaticamente durante a importação "
             f"quando o perfil '{profile_name}' for selecionado."
         )
-        
+
     def _save_and_close(self):
         """Método encapsulado que sincroniza a UI, salva no disco e fecha."""
         tab_name = self.current_tab_name

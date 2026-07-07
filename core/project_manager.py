@@ -630,19 +630,25 @@ class LegacyImportWorker(QtCore.QThread):
         use_simulated = self.settings.get("use_simulated_rectification", False)
         use_physical = self.settings.get("use_fisheye_rectification", False)
         
+        zoom_orig = 0 # Valor de segurança (Sem zoom)
+        
         if (use_simulated or use_physical) and self.files:
+            profiles_db = self.settings.get("fisheye_profiles", {})
+            
             if use_simulated:
                 profile_name = self.settings.get("last_sim_profile", "")
                 sim_db = self.settings.get("fisheye_sim_profiles", {})
                 angle = sim_db.get(profile_name, {}).get("sim_fov", 170)
+                zoom_orig = sim_db.get(profile_name, {}).get("sim_zoom", 0)
                 logger_mode = "Simulada"
             else:
                 profile_name = self.settings.get("last_fisheye_profile", "")
                 angle = self.settings.get("last_fisheye_angle", 180)
+                # Na calibração física, o zoom fica aninhado na árvore de câmeras daquele ângulo específico
+                angle_key = f"angle_{angle}"
+                zoom_orig = profiles_db.get(profile_name, {}).get("cameras", {}).get(angle_key, {}).get("checker_zoom", 0)
                 logger_mode = "Física"
                 
-            profiles_db = self.settings.get("fisheye_profiles", {})
-            
             if profile_name in profiles_db:
                 profile_settings = profiles_db[profile_name].get("settings", {})
                 k_path = profile_settings.get(f"angle_{angle}_K")
@@ -654,12 +660,26 @@ class LegacyImportWorker(QtCore.QThread):
                         K = np.load(k_path)
                         D = np.load(d_path)
                         
+                        # --- INÍCIO DO CÁLCULO DA NOVA MATRIZ DE PROJEÇÃO COM ZOOM ---
+                        K_new = K.copy()
+                        if zoom_orig != 0:
+                            if zoom_orig >= 0:
+                                zoom_factor = 1.0 + (zoom_orig / 100.0)
+                            else:
+                                zoom_factor = 1.0 / (1.0 - zoom_orig / 100.0)
+                            
+                            K_new[0, 0] *= zoom_factor
+                            K_new[1, 1] *= zoom_factor
+                            logger.info(f"[Fisheye] Fator de zoom ({zoom_factor:.2f}x) injetado na matriz de projeção.")
+                        # --- FIM DO CÁLCULO ---
+                        
                         teste_img = cv2.imread(self.files[0])
                         if teste_img is not None:
                             shape = teste_img.shape[:2] 
                             
+                            # Passamos 'K' como intrínseca (geometria bruta) e 'K_new' como projeção (corte visual)
                             self.map1, self.map2 = cv2.fisheye.initUndistortRectifyMap(
-                                K, D, np.eye(3), K, shape[::-1], cv2.CV_16SC2
+                                K, D, np.eye(3), K_new, shape[::-1], cv2.CV_16SC2
                             )
                             logger.info(f"[Fisheye] Mapas retificados ({logger_mode} | Perfil: {profile_name} | {angle}°)")
                     except Exception as e:
@@ -749,7 +769,7 @@ class LegacyImportWorker(QtCore.QThread):
                 # 2.1 Aplica a Etapa 4.1 (Remoção da distorção da lente via Remap)
                 cv_img_rect = cv2.remap(
                     cv_img, self.map1, self.map2, 
-                    interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT
+                    interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE
                 )
                 
                 # 2.2 Converte o espaço de cor (BGR do OpenCV para RGB do Pillow)
